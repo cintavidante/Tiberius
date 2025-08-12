@@ -74,7 +74,7 @@ def find_cosmic_frames(spectra,ref_frame,clip=5,mad=False,ignore_edges=0,mask=No
             keep_index[-ignore_edges:] = True
 
         if i == 0 and verbose:
-            plt.figure()
+            plt.figure(figsize=[10,8])
             plt.subplot(211)
             plt.plot(f,label="input spectrum")
             plt.plot(ref_frame_norm,label="reference spectrum")
@@ -99,7 +99,10 @@ def find_cosmic_frames(spectra,ref_frame,clip=5,mad=False,ignore_edges=0,mask=No
             cosmic_frames.append(i)
             cosmic_pixels.append(np.where(~keep_index)[0])
 
-    return np.array(cosmic_frames),np.array(cosmic_pixels)
+    # for arrs in cosmic_pixels:
+    #     print(arrs)
+
+    return np.array(cosmic_frames), cosmic_pixels
 
 
 
@@ -168,10 +171,10 @@ def find_cosmic_frames_with_medfilt(data,box_width=7,sigma_clip=5,mask=None,sear
                 cosmic_pixels.append(np.array(sorted(cosmic)))
 
 
-    return np.array(sorted(set(cosmic_frames))),np.array(cosmic_pixels)
+    return np.array(sorted(set(cosmic_frames))),cosmic_pixels
 
 
-def check_cosmic_frames(spectra,frame_array,cosmic_positions=None,single_plot=True):
+def check_cosmic_frames(spectra,frame_array,cosmic_positions=None,single_plot=True,absorb_dict=None):
 
     """A sanity check that will check the output of find_cosmic_frames and find_cosmic_frames_with_medfilt. Plots all flagged cosmics overlaid on the 1D spectra.
 
@@ -185,16 +188,25 @@ def check_cosmic_frames(spectra,frame_array,cosmic_positions=None,single_plot=Tr
     Nothing - only plots figures"""
 
     if single_plot:
-        plt.figure()
+        plt.figure(figsize=[10, 5])
 
     for i,f in enumerate(frame_array):
         if not single_plot:
-            plt.figure()
+            plt.figure(figsize=[10, 5])
         plt.plot(spectra[f],'k',alpha=0.75)
         if cosmic_positions is not None:
             # ~ for c in cosmic_positions[i]:
                 # ~ plt.axvline(c,color='r')
             plt.plot(cosmic_positions[i],spectra[f][cosmic_positions[i]],'rx',ms=10)
+        
+        for key, l in absorb_dict.items():
+
+            plt.axvline(l[0], linestyle='-.', color='grey', alpha=0.3)
+            plt.axvline(l[1], linestyle='-.', color='grey', alpha=0.3)
+
+            # Coloring the masked regions
+            plt.axvspan(l[0], l[1], color='grey', alpha=0.1)
+
         plt.ylabel('Integrated counts')
         plt.xlabel('Y pixel')
         if not single_plot:

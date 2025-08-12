@@ -1,6 +1,8 @@
 #### Author of this code: James Kirk
 #### Contact: jameskirk@live.co.uk 
 
+## Cinta's Note: only run this OUTSIDE of pickled_objects folder!
+
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import gridspec
@@ -31,11 +33,11 @@ args = parser.parse_args()
 nsubplots = 0
 
 try:
-    am = pickle.load(open('airmass.pickle','rb'))
+    am = pickle.load(open('pickled_objects/airmass.pickle','rb'))
     nsubplots += 1
 
 except:
-    am = np.loadtxt('airmass.txt')
+    am = np.loadtxt('pickled_objects/airmass.pickle')
     nsubplots += 1
 
 am_cut = np.max(np.where(am <= args.am_limit)[0])
@@ -65,8 +67,8 @@ else:
 
 
 if not args.fwhm:
-    fwhm = pickle.load(open('fwhm_1.pickle','rb'))[:am_cut]
-    fwhm2 = pickle.load(open('fwhm_2.pickle','rb'))[:am_cut]
+    fwhm = pickle.load(open('pickled_objects/fwhm_1.pickle','rb'))[:am_cut]
+    fwhm2 = pickle.load(open('pickled_objects/fwhm_2.pickle','rb'))[:am_cut]
     nsubplots += 1
 else:
     fwhm = None
@@ -74,59 +76,67 @@ else:
 
 
 if not args.max:
-    max1 = pickle.load(open('max_counts_1.pickle','rb')).max(axis=1)[:am_cut]
-    max2 = pickle.load(open('max_counts_2.pickle','rb')).max(axis=1)[:am_cut]
+    max1 = pickle.load(open('pickled_objects/max_counts_1.pickle','rb')).max(axis=1)[:am_cut]
+    max2 = pickle.load(open('pickled_objects/max_counts_2.pickle','rb')).max(axis=1)[:am_cut]
     nsubplots += 1
 else:
     max1 = None
     max2 = None
 
+# try:
+# 	mjd = pickle.load(open('pickled_objects/mjd_time.pickle','rb'))[:am_cut]
+# 	time = mjd - int(mjd[0])
+# except:
+# 	time = pickle.load(open('pickled_objects/time.pickle','rb'))[:am_cut]
+# 	time = time - int(time[0])
+
 try:
-	mjd = pickle.load(open('mjd_time.pickle','rb'))[:am_cut]
+	mjd = pickle.load(open('pickled_objects/obs_time_array.pickle','rb'))[:am_cut]
 	time = mjd - int(mjd[0])
 except:
-	time = pickle.load(open('time.pickle','rb'))[:am_cut]
+	time = pickle.load(open('pickled_objects/obs_time_array.pickle','rb'))[:am_cut]
 	time = time - int(time[0])
 
-s1 = pickle.load(open('star1_flux.pickle','rb'))[:am_cut]
-s2 = pickle.load(open('star2_flux.pickle','rb'))[:am_cut]
+
+s1 = pickle.load(open('pickled_objects/star1_flux.pickle','rb'))[:am_cut]
+s2 = pickle.load(open('pickled_objects/star2_flux.pickle','rb'))[:am_cut]
 
 if args.raw_lcs:
     print('Plotting raw light curves')
     nsubplots += 1
     try:
-        exposure_times = np.loadtxt('exposure_times.txt')[:am_cut]
+        exposure_times = np.loadtxt('pickled_objects/exposure_times.txt')[:am_cut]
     except:
-        exposure_times = pickle.load(open('exposure_times.pickle','rb'))[:am_cut]
+        exposure_times = pickle.load(open('pickled_objects/exposure_times.pickle','rb'))[:am_cut]
         #print 'No exposure times loaded, may generate problems when plotting raw light curves'
 
 #nsubplots += 1
 
 try:
-    sky1 = pickle.load(open('sky1.pickle','rb'))[:am_cut]
-    sky2 = pickle.load(open('sky2.pickle','rb'))[:am_cut]
+    sky1 = pickle.load(open('pickled_objects/background_avg_star1.pickle','rb'))[:am_cut]
+    sky2 = pickle.load(open('pickled_objects/background_avg_star2.pickle','rb'))[:am_cut]
 
     single_sky = True
 
     nsubplots += 1
 
 except:
-    sky1 = pickle.load(open('sky_avg_star1.pickle','rb'))[:am_cut]
-    sky2 = pickle.load(open('sky_avg_star2.pickle','rb'))[:am_cut]
+    sky1 = pickle.load(open('pickled_objects/sky_avg_star1.pickle','rb'))[:am_cut]
+    sky2 = pickle.load(open('pickled_objects/sky_avg_star2.pickle','rb'))[:am_cut]
 
-    sky1_left = pickle.load(open('sky_left_star1.pickle','rb'))[:am_cut]
-    sky1_right = pickle.load(open('sky_right_star1.pickle','rb'))[:am_cut]
+    sky1_left = pickle.load(open('pickled_objects/sky_left_star1.pickle','rb'))[:am_cut]
+    sky1_right = pickle.load(open('pickled_objects/sky_right_star1.pickle','rb'))[:am_cut]
 
-    sky2_left = pickle.load(open('sky_left_star2.pickle','rb'))[:am_cut]
-    sky2_right = pickle.load(open('sky_right_star2.pickle','rb'))[:am_cut]
+    sky2_left = pickle.load(open('pickled_objects/sky_left_star2.pickle','rb'))[:am_cut]
+    sky2_right = pickle.load(open('pickled_objects/sky_right_star2.pickle','rb'))[:am_cut]
 
     single_sky = False
 
     nsubplots += 3
 
 
-trace1 = pickle.load(open('x_positions_1.pickle','rb'))[:am_cut]
-trace2 = pickle.load(open('x_positions_2.pickle','rb'))[:am_cut]
+trace1 = pickle.load(open('pickled_objects/x_positions_1.pickle','rb'))[:am_cut]
+trace2 = pickle.load(open('pickled_objects/x_positions_2.pickle','rb'))[:am_cut]
 
 if args.x1 is None:
     x1 = trace1.mean(axis=1) - trace1.mean(axis=1)[0]

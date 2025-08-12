@@ -10,6 +10,8 @@ from scipy.ndimage import filters
 from scipy.stats import median_abs_deviation as mad
 import pickle
 
+import os
+
 # Prevent matplotlib plotting frames upside down
 plt.rcParams['image.origin'] = 'lower'
 
@@ -22,6 +24,8 @@ parser.add_argument('-inst','--instrument',help="""Define the instrument used, e
 parser.add_argument('-c','--clobber',help="""Need this argument to save resulting fits file, default = False""",action='store_true')
 parser.add_argument('-s','--saturation_limit',help="""Use this to exclude frames with counts above a satruation threshold. Default is 55000""",type=int,default=55000)
 args = parser.parse_args()
+
+print(args.flatslist)
 
 if args.instrument != 'EFOSC' and args.instrument != 'ACAM':
     raise NameError('Currently only set up to deal with ACAM or EFOSC data')
@@ -453,13 +457,17 @@ if nwin == 1:
 else:
     f = combine_flats_2windows(flats_files,master_bias_data,args.saturation_limit,args.verbose)
 
-save_fits(f/np.median(f),'master_flat_'+args.flatslist+'.fits',args.clobber)
+# Making sure that only the list name goes through here
+list_path = args.flatslist
+flat_name = os.path.splitext(os.path.basename(list_path))[0]
+
+save_fits(f/np.median(f),'master_flat_'+flat_name+'.fits',args.clobber)
 
 test_smoothing_widths(np.array(f),nwin)
 
 chosen_box_width = int(input("Enter desired box width for running median (must be ODD INTEGER): "))
 
-median_smooth(np.array(f),args.flatslist,nwin,chosen_box_width,args.clobber)
+median_smooth(np.array(f),flat_name,nwin,chosen_box_width,args.clobber)
 
 ## Note: Gaussian smooth not currently used, despite good perfomance, as it removes features in x as well as y
 # gaussian_smooth(np.array(f),args.flatslist,nwin,args.instrument,args.clobber)

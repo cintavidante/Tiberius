@@ -1,6 +1,10 @@
 #### Author of this code: James Kirk
 #### Contact: jameskirk@live.co.uk 
 
+## Cinta's note:
+## Adjust so that if I run this python script in date_folder/raw, the list will be 
+#$ saved in date_folder/calib_files
+
 from astropy.io import fits
 import glob
 import os
@@ -11,7 +15,12 @@ parser.add_argument("-c","--clobber",help="Overwrite previously saved lists if t
 args = parser.parse_args()
 
 all_files = sorted(glob.glob('*.fits'))
+
+# Current working directory
 pwd = os.getcwd()
+
+# Parent working directory (one directory above)
+parent_dir = os.path.dirname(pwd)
 
 if args.clobber:
      preexisting = [open(i,'w') for i in glob.glob("*_list")]
@@ -20,6 +29,7 @@ else:
 	pass
 
 def split_list(file_names,pwd):
+
     for file_number,i in enumerate(file_names):
         f = fits.open(i)
         hdr = f[0].header
@@ -59,11 +69,17 @@ def split_list(file_names,pwd):
             grism = 'Gr13'
         
         print(i, grism, filt, slit, obj)
+
+        # Create the filename
+        filename = obj + '_' + grism + '_' + slit + filt + '_list'
+        
+        # Output the file one directory above the Raw directory
+        filepath = os.path.join(parent_dir, 'calib_files/file_lists', filename)
         
         try:
-            file_list = open(obj+'_'+grism+'_'+slit+filt+'_list','a')
+            file_list = open(filepath,'a')
         except:
-            file_list = open(obj+'_'+grism+'_'+slit+filt+'_list','w')
+            file_list = open(filepath,'w')
         
         file_list.write(pwd+'/'+i+' \n')
         file_list.close()

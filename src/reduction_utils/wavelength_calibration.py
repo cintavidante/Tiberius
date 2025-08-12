@@ -6,7 +6,7 @@ from astropy.modeling.models import Moffat1D
 import numpy as np
 import matplotlib.pyplot as plt
 import peakutils
-from scipy import stats,optimize,interpolate,conjugate, polyfit
+from scipy import stats,optimize,interpolate # removed conjugate and polyfit because there are not included in scipy anymore
 import pickle
 from scipy.fftpack import fft, ifft
 from scipy.interpolate import UnivariateSpline as US
