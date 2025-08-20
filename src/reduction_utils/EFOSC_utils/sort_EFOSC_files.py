@@ -22,8 +22,11 @@ pwd = os.getcwd()
 # Parent working directory (one directory above)
 parent_dir = os.path.dirname(pwd)
 
+# Directory of list
+list_dir = os.path.join(parent_dir, "calib_files/file_lists")
+
 if args.clobber:
-     preexisting = [open(i,'w') for i in glob.glob("*_list")]
+     preexisting = [open(i,'w') for i in glob.glob(os.path.join(list_dir, "*_list"))]
      [i.close() for i in preexisting]
 else:
 	pass
