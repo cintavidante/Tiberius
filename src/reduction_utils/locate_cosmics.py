@@ -18,6 +18,47 @@ plt.rcParams['image.origin'] = 'lower'
 
 # ------------------------------------------------------------------------------------------
 
+def locate_zeroes(plot_neg_cosmic_map, plot_neg_med_map, plot_dir):
+
+    neg_plot_dir = os.path.join(plot_dir, 'negative_median')
+    os.makedirs(neg_plot_dir, exist_ok=True)
+
+    for i in range(nframes):
+
+        if i < 9:
+            n = '0{}'.format(i+1)
+        else:
+            n = i + 1
+
+        plt.figure(figsize=[15, 10])
+        plt.imshow(plot_neg_cosmic_map[i], cmap='viridis', origin='lower')
+        plt.colorbar()
+        plt.title("Negative median values for cosmic frame {}".format(i+1))
+        plt.xlabel("Pixel column")
+        plt.ylabel("Pixel row")
+        
+        # Save the plot
+        filename = os.path.join(neg_plot_dir, 'cosmic_negative_median_frame_{}.png'.format(n))
+        plt.savefig(filename)
+        plt.close()
+
+
+        # -------
+
+        plt.figure(figsize=[15, 10])
+        plt.imshow(plot_neg_med_map[i], cmap='viridis', origin='lower')
+        plt.colorbar()
+        plt.title("Negative median values in all frame {}".format(i+1))
+        plt.xlabel("Pixel column")
+        plt.ylabel("Pixel row")
+        
+        # Save the plot
+        filename = os.path.join(neg_plot_dir, 'negative_median_frame_{}.png'.format(n))
+        plt.savefig(filename)
+        plt.close()
+
+# ---------------------------------------------
+
 def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, verbose=False):
     """The function that locates the frames/pixels where cosmics are located.
 
@@ -156,7 +197,8 @@ def check_cosmic_frames(cosmic_pixels, frame_cut_off):
 
 # ---------------------------------------------
 
-def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, jwst=False, cleaned_direc=os.getcwd()):
+def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, jwst=False, 
+                    cleaned_direc=os.getcwd(), bias=False, master_bias=None):
 
     """
     Function to replace cosmic pixels with median values in the science fits files.
@@ -216,50 +258,26 @@ def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, j
                 new_fits_file.writeto(file_path, overwrite=True)
         
         return 
-
-        # fits_files = [fits.open(s,memmap=False) for s in science_list]
-        # new_fits_files = [copy.deepcopy(f) for f in fits_files]
-        # filenames = [s.split("/")[-1] for s in science_list]
-        # nints = np.cumsum([f["SCI"].data.shape[0] for f in fits_files])
-        # total_nints = nints[-1]
-
-        # for s in science_list:
-        #     fits_file = fits.open(s,memmap=False)
-        #     new_fits_file = copy.deepcopy(fits_file)
-        #     filename = s.split("/")[-1]
-
-        #     for i,c in enumerate(cosmic_pixels):
-
-        #         jwst_fits_counter = np.digitize(i,nints)
-
-        #         if jwst_fits_counter > 0:
-        #             jwst_index_counter = i-nints[jwst_fits_counter]
-        #         else:
-        #             jwst_index_counter = i
-
-        #         print("Cleaning integration %d, %s"%(i,filenames[jwst_fits_counter]))
-
-        #         for row in range(nrows):
-        #             new_fits_files[jwst_fits_counter]["SCI"].data[jwst_index_counter][row][c[row]] = medians[i][row][c[row]]
-
-        #     for i,nf in enumerate(new_fits_files):
-        #         print("Saving cosmic_cleaned_fits/%s"%(filenames[i]))
-        #         nf.writeto("cosmic_cleaned_fits/%s"%filenames[i],overwrite=True)
-
-        # return
     
     medians = medians.astype('uint16')  
     # array_loop = [1, 3, 5, 7, 9]
 
     for i in range(nframes):
 
+        # Make copies of fits files
         f = fits.open(science_list[i])
         f_new = copy.deepcopy(f)
+
+        if bias:
+            f_new[0].data = f_new[0].data - master_bias
+
+        # Filename from science list
         filename = science_list[i].split("/")[-1]
 
         print("Cleaning frame {}".format(i+1))
 
         for row in range(nrows):
+            
             f_new[0].data[row][cosmic_pixels[i][row]] = medians[i][row][cosmic_pixels[i][row]]
 
         file_path = os.path.join(cleaned_direc, filename)
@@ -267,18 +285,22 @@ def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, j
         f_new.writeto(file_path, overwrite=True)
         f.close()
     
-    # Make a new file list for the cleaned cosmic fits
-    print('Making new list for cleaned cosmic fits...')
+    new_list = input("Do you want to overwrite the cleaned science list for this pixel clip group? [y/n]: ")
 
-    # Read the global path for all cleaned cosmic fits
-    file_path = os.path.join(cleaned_direc, '*.fits')
-    all_files = sorted(glob.glob(file_path))
+    if new_list == "y":
+    
+        # Make a new file list for the cleaned cosmic fits
+        print('Making new list for cleaned cosmic fits...')
 
-    # Write a new list. This makes sure it's overwriting new files!!!
-    with open(args.sciencelist + '_cleaned_' + cut_off_name, 'w') as new_list:
+        # Read the global path for all cleaned cosmic fits
+        file_path = os.path.join(cleaned_direc, '*.fits')
+        all_files = sorted(glob.glob(file_path))
 
-        for files in all_files:
-            new_list.write(files+' \n')
+        # Write a new list. This makes sure it's overwriting new files!!!
+        with open(args.sciencelist + '_cleaned_' + cut_off_name, 'w') as new_list:
+
+            for files in all_files:
+                new_list.write(files+' \n')
 
     return
 
@@ -330,16 +352,20 @@ if __name__ == "__main__":
     nints = []
 
     for s in science_list:
+
         f = fits.open(s,memmap=False)
+
         if args.jwst:
             data.append(f["SCI"].data)
             nints.append(f["SCI"].data.shape[0])
         else:
             if bias: # subtract the bias if using one
-                data.append(f[0].data-master_bias)
+                data.append(f[0].data - master_bias)
             else:
                 data.append(f[0].data)
+
             nints.append(f[0].data.shape[0])
+
         f.close()
 
     nints = np.cumsum(nints)
@@ -382,13 +408,6 @@ if __name__ == "__main__":
             frame_list = np.array(frame_list) - 1  # Convert to zero-based index
 
             cut_off_arr[frame_list] = cut_val
-    
-    # print(cut_off_arr)
-
-    # # Change the first values to be like 8
-    # cut_off_arr[:3] = 8
-    # cut_off_arr[3:6] = 7
-    # cut_off_arr[:-3] = 7
 
     # Find unique values in sigma / cut_off
     sigmas = np.unique(cut_off_arr)
@@ -440,6 +459,21 @@ if __name__ == "__main__":
     # Change the cosmic pixels array to boolean type
     cosmic_pixels = cosmic_pixels.astype(bool)
 
+    # When there is possibility of negative median values
+    if args.bias_frame is not None:
+
+        # Negative median pixels for cosmic pixels
+        neg_cosmic_map = cosmic_pixels & (median_values < 0)
+        # plot_neg_cosmic_map = np.where(neg_cosmic_map, 1, 0)
+
+        # Negative median in general
+        all_array = np.full_like(median_values, True, dtype=bool)
+        neg_med_map = all_array & (median_values < 0)
+        # plot_neg_med_map = np.where(neg_med_map, 1, 0) 
+
+        # Change median values that is negative to zero
+        median_values[median_values < 0] = 0
+
     # Outputs
     # ----------------------------------------
 
@@ -459,12 +493,23 @@ if __name__ == "__main__":
     # double-check the output
     if not args.verbose:
 
-        print("Plotting frames with high number of cosmics...\n")
+        print("\nPlotting frames with high number of cosmics...\n")
         cosmic_pixels = check_cosmic_frames(cosmic_pixels,args.frame_clip)
 
     # Save the cosmic masks
     pickle.dump(cosmic_pixels, 
                 open(os.path.join(direc, "cosmic_pixel_mask_{}_sigma_clip.pickle".format(cut_off_name)), "wb"))
+    
+    
+    # For possibility of negative median values
+    if args.bias_frame is not None:
+        
+        print("\nBecause bias is provided, plotting pixels with negative median values...\n")
+        locate_zeroes(neg_cosmic_map, neg_med_map, plot_dir)
+    
+        # Save cosmic masks where the median values were supposed to be negative
+        pickle.dump(neg_cosmic_map,
+                    open(os.path.join(direc, "cosmic_pixel_mask_neg_median_{}_sigma_clip.pickle".format(cut_off_name)), "wb"))
 
     # optionally save new fits files with cosmics replaced by median pixel values
     # note: this doesn't offer much improvement over the interpolation performed in long_slit_science_extraction.py
@@ -509,7 +554,5 @@ if __name__ == "__main__":
     
     if replace == "y":
         replace_cosmics(cosmic_pixels, median_values, science_list, 
-                        nints, cut_off_name, args.jwst, cleaned_direc=cleaned_dir)
-    
-    # print('Max value of master bias: {}'.format(np.max(master_bias)))
-    # print('Min value of master bias: {}'.format(np.min(master_bias)))
+                        nints, cut_off_name, args.jwst, cleaned_direc=cleaned_dir,
+                        bias=bias, master_bias=master_bias)
