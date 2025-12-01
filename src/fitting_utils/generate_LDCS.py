@@ -94,6 +94,8 @@ def ld_initialise(Teff,Teff_err,logg,logg_err,Z,Z_err,wvl_centre,wvl_error,ld_un
     # Need to convert wavelengths from Angstroms to nm
     filters = [BoxcarFilter('%s'%i,c-e//2,c+e//2) for i,(c,e) in enumerate(zip(wvl_centre/10.,wvl_error/10.))]
 
+    print(np.shape(wvl_centre))
+
     # find the maximum resolution (minimum wavelength spacing) in nm
     resolution = np.diff(wvl_centre).min()/10.
 

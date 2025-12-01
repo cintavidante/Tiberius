@@ -13,6 +13,7 @@ from scipy.interpolate import UnivariateSpline as US
 from scipy.signal import medfilt as MF
 from astropy.stats import median_absolute_deviation
 import warnings
+from matplotlib.backends.backend_pdf import PdfPages
 
 with warnings.catch_warnings():
     # This is to supress the warnings that are generated upon importing pysynphot and are only becuase we've not downloaded the calibration files - which are not needed by us
@@ -506,9 +507,12 @@ def normalise(data,maximum=False):
 
     return data/np.nanmedian(data)
 
-def plot_and_fit_regions(stellar_spectrum,wvl_input,guess_dict,verbose=False,work_in_wavelength=False,absorption=True):
+def plot_and_fit_regions(stellar_spectrum, wvl_input, guess_dict, verbose=False, 
+                         work_in_wavelength=False, absorption=True, offset=0,
+                         save_pdf=False, save_dest=None, n=None, star12=None):
     """
-    The function that takes a 1D spectrum, wavelength array and locations of absorption lines, and fits Gaussians to each absorption line. It also returns the position of the minimum flux for each line.
+    The function that takes a 1D spectrum, wavelength array and locations of absorption lines, and fits Gaussians 
+    to each absorption line. It also returns the position of the minimum flux for each line.
 
     Note: this could be improved by replacing the Gaussian with a Moffat fit although this is not yet implemented.
 
@@ -532,18 +536,24 @@ def plot_and_fit_regions(stellar_spectrum,wvl_input,guess_dict,verbose=False,wor
     star_centres_gauss = []
     star_centres_argmin = []
 
+    wvl_input = wvl_input - offset
+
     plt.close('all')
-    for i,l in enumerate(spectral_lines):
 
-        chunk = (wvl_input > guess_dict[l][0]) & (wvl_input < guess_dict[l][-1])
+    if save_pdf:
+        pp = PdfPages('{}/line_fits_frame_{}_{}.pdf'.format(save_dest, n+1, star12))
 
+    for i, l in enumerate(spectral_lines):
+
+        chunk = (wvl_input > (guess_dict[l][0])) & (wvl_input < (guess_dict[l][-1]))
         y = stellar_spectrum[chunk]
+        
         if work_in_wavelength:
             x = wvl_input[chunk]
         else:
             x = np.where(chunk)[0]
 
-        poly = np.poly1d(np.polyfit((x[0],x[-1]),(y[0],y[-1]),1))
+        poly = np.poly1d(np.polyfit((x[0],x[-1]), (y[0],y[-1]), 1))
         norm_y = y/poly(x)
 
         if absorption:
@@ -568,25 +578,37 @@ def plot_and_fit_regions(stellar_spectrum,wvl_input,guess_dict,verbose=False,wor
             star_centres_gauss.append(centre_guess)
 
 
-        if verbose:
+        if verbose or save_pdf:
+
             plt.figure()
+
             plt.plot(x,norm_y,'b')
             plt.plot(x,gauss2(x,*popt),'g')
             plt.axvline(centre_guess,color='b',label='Centre guess = %d'%centre_guess)
             plt.axvline(popt[1],color='g',label='Gauss = %.3f'%popt[1])
+
             if work_in_wavelength:
                 plt.xlabel('Wavelength ($\AA$)')
             else:
                 plt.xlabel('Pixel number')
+
             plt.ylabel('Normalised flux')
             plt.legend(loc='lower right')
             plt.title('Actual line = %.3f'%l)
-            plt.show()
+
+            if save_pdf:
+                pp.savefig()
+            else:
+                plt.show()
 
             fwhm = 2*np.sqrt(2*np.log(2))*popt[2]
             R = l/fwhm
 
-            print("centre guess (argmin/argmax) = %d; Gauss mean = %.3f; Gauss std dev = %.4f; Spectral resolution = %d; Min bin width = %d"%(centre_guess,popt[1],popt[2],np.round(R),np.round(l/R)))
+            if not save_pdf:
+                print("centre guess (argmin/argmax) = %d; Gauss mean = %.3f; Gauss std dev = %.4f; Spectral resolution = %d; Min bin width = %d"%(centre_guess,popt[1],popt[2],np.round(R),np.round(l/R)))
+        
+    if save_pdf:
+        pp.close()
 
     return np.array(star_centres_gauss),np.array(star_centres_argmin)
 

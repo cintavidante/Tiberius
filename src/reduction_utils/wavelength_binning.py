@@ -184,7 +184,7 @@ def normalise_flux(flux,error,contact1,contact4,airmass=None,airmass_cut=2):
 
 
 
-def plot_all_bins(mjd,flux,error,rebin_data=None):
+def plot_all_bins(mjd,flux,error,rebin_data=None,figsize=(7,10)):
     """A function that takes the normalised spectroscopic light curve fluxes and errors and plots them all on a single figure.
 
     Inputs:
@@ -205,7 +205,7 @@ def plot_all_bins(mjd,flux,error,rebin_data=None):
     if rebin_data is not None:
         xbins = np.linspace(mjd_off[0],mjd_off[-1],rebin_data)
 
-    plt.figure()
+    plt.figure(figsize=figsize)
     for i in range(nbins):
 
         if rebin_data is not None:
@@ -623,7 +623,8 @@ def simple_bin(flux,flux_error,ancillary_data,wvl_solution,bin_edges,weighted=Tr
     return np.array(binned_flux),np.array(binned_error),binned_ancillary
 
 
-def plot_spectra(star1,star2,wvl_solution,wvl_solution_2=None,bin_edges=None,bin_centres=None,alkali=False,save_fig=False,ratio=True,xmin=None,xmax=None):
+def plot_spectra(star1,star2,wvl_solution,wvl_solution_2=None,bin_edges=None,bin_centres=None,
+                 alkali=False,save_fig=False,ratio=True,xmin=None,xmax=None, figsize=(7,4)):
 
     """A function that plots the spectra of target and comparison and the ratio of these, along with bin boundaries and ability to plot telluric spectra.
 
@@ -645,9 +646,9 @@ def plot_spectra(star1,star2,wvl_solution,wvl_solution_2=None,bin_edges=None,bin
     """
 
     if ratio:
-        plt.figure()
+        plt.figure(figsize=figsize)
     else:
-        plt.figure(figsize=(7,4))
+        plt.figure(figsize=figsize)
 
     if ratio:
         nplots = 2

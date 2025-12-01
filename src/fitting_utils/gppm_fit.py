@@ -9,10 +9,10 @@ import argparse
 from scipy.interpolate import UnivariateSpline as US
 
 from global_utils import parseInput
-from Tiberius.src.fitting_utils import mcmc_utils as mc
-from Tiberius.src.fitting_utils import TransitModelGPPM as tmgp
-from Tiberius.src.fitting_utils import parametric_fitting_functions as pf
-from Tiberius.src.fitting_utils import plotting_utils as pu
+from fitting_utils import mcmc_utils as mc
+from fitting_utils import TransitModelGPPM as tmgp
+from fitting_utils import parametric_fitting_functions as pf
+from fitting_utils import plotting_utils as pu
 
 
 parser = argparse.ArgumentParser(description='Run fit to a single light curve that is either a wavelength-binned or white light curve. This makes use of the TransitModelGPPM class, which fits the red noise as a GP + parametric model.')
@@ -159,6 +159,7 @@ if poly_used or exp_ramp_used:
                     polynomial_coefficients.append(v)
                 if "r" in k.split("_")[0]:
                     ramp_coefficients.append(v)
+        print(polynomial_coefficients)
     else:
         polynomial_coefficients = None
         ramp_coefficients = None
@@ -474,8 +475,8 @@ if GP_used:
 if poly_used:
     if polynomial_coefficients is not None:
         for i,c in enumerate(polynomial_coefficients):
-            # d['c%d'%(i+1)] = tmgp.Param(c)
-            d['c%d'%(i+1)] = c
+            d['c%d'%(i+1)] = tmgp.Param(c)
+            #d['c%d'%(i+1)] = c
     else:
         d['c1'] = tmgp.Param(1.0)
         for i in range(1,polynomial_orders.sum()+1):

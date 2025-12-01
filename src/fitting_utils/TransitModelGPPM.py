@@ -461,9 +461,17 @@ class TransitModelGPPM(object):
 
         if self.poly_used: # priors on polynomial coefficients
             if not self.poly_fixed:
-                for i in range(0,self.polynomial_orders.sum()+1):
-                    if self.pars['c%d'%(i+1)].currVal > 10 or self.pars['c%d'%(i+1)].currVal < -10:
-                        return -np.inf
+                # for i in range(0,self.polynomial_orders.sum()+1):
+                #     if self.pars['c%d'%(i+1)].currVal > 10 or self.pars['c%d'%(i+1)].currVal < -10:
+                #         return -np.inf
+                # for Cinta's HAT-P-65 b only
+                for i in range(0,self.polynomial_orders[0]+1):
+                    if (i == 1):
+                        if self.pars['c%d'%(i+1)].currVal > 0 or self.pars['c%d'%(i+1)].currVal < -10:
+                            return -np.inf
+                    else:
+                        if self.pars['c%d'%(i+1)].currVal > 10 or self.pars['c%d'%(i+1)].currVal < -10:
+                            return -np.inf
 
         if self.exp_ramp_used: # priors on polynomial coefficients
             if not self.exp_ramp_fixed:
