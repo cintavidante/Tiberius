@@ -1,6 +1,10 @@
 #### Author of this code: James Kirk
 #### Contact: jameskirk@live.co.uk 
 
+#################################################################################
+# Initialisation: Sorting the files
+#################################################################################
+
 ## Cinta's note:
 ## Adjust so that if I run this python script in date_folder/raw, the list will be 
 #$ saved in date_folder/calib_files
@@ -9,8 +13,6 @@
 
 import glob
 import os
-import xarray as xr
-
 from astropy.io import fits
 
 # ---------------------------------------------------------------------------
@@ -162,12 +164,13 @@ def get_list(file_names, output_folder, inst=None):
 
 # ---------------------------------------------------------------------------
 
-def sort_the_images(ds):
+def sort_the_images(meta):
 
     # Read from xarray
-    inst = ds.attrs['instrument']
-    input_dir = ds.attrs['inputdir']
-    output_dir = ds.attrs['outputdir']
+    attr = getattr(meta, "ds", meta).attrs
+    inst = attr['instrument']
+    input_dir = attr['inputdir_Spock0']
+    output_dir = attr['outputdir_Spock0']
 
     # Current working directory
     pwd = os.getcwd()
@@ -186,9 +189,13 @@ def sort_the_images(ds):
     # Get file lists
     get_list(all_files, output_folder, inst)
 
+    print('List generation complete.')
+
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
+    
+    import xarray as xr
 
     # Example usage
     ds = xr.Dataset()
