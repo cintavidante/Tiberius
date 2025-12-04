@@ -12,7 +12,8 @@ import sys
 import glob
 from PIL import Image
 from pathlib import Path
-from global_utils.global_utils import get_bool_attr, get_fits_image_extensions_from_config
+from global_utils.utils import get_bool_attr
+from global_utils.instrument_utils import get_fits_image_extensions_from_config
 
 # Prevent matplotlib flipping images
 plt.rcParams['image.origin'] = 'lower'
@@ -207,9 +208,6 @@ def create_master_bias(meta, instr_cfg):
     savefig = get_bool_attr(attr["bias_savefig"])
     savefits = get_bool_attr(attr["bias_clobber"])
     eyeball = get_bool_attr(attr["bias_eyeball"])
-
-    if instrument.strip("'").lower() != instr_cfg.name.lower():
-        raise ValueError("Instrument must be ACAM or EFOSC")
 
     Path(save_dir).mkdir(exist_ok=True)
     

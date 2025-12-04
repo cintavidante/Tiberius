@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 import yaml
 
 @dataclass
@@ -12,7 +13,10 @@ class InstrumentConfig:
     prefix: str
 
 def load_instrument_config(name, filename="instruments.yaml"):
-    with open(filename, "r") as f:
+    here = os.path.dirname(__file__)
+    fullpath = os.path.join(here, filename)
+
+    with open(fullpath, "r") as f:
         data = yaml.safe_load(f)
 
     if name not in data:
