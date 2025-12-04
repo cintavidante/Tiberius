@@ -1,0 +1,37 @@
+############################################################################
+# Spock 1: Pre-Processing
+############################################################################
+
+# Pipeline Stages
+skip_bias                     False
+skip_flats                    True
+skip_cosmics                  False
+skip_badpixelmask             True
+
+# Bias
+bias_list                     ./Spock0_calib_output/BIAS_Free_27arcsec_list
+bias_verbose                  True
+bias_clobber                  True
+bias_savefig                  True
+bias_eyeball                  False
+
+# Flats
+flat_list:                    path/to/file
+# Under construction
+
+# 1/f correction
+skip_1fcorrection             1
+# Under construction
+
+# Cosmic rays
+locate_cosmics_list           path/to/file
+locate_cosmics_pixelclip      8
+locate_cosmics_verbose        True
+locate_cosmics_review         True                    # To make it interactive
+
+# Bad-Pixel-Mask
+# Under construction
+
+# Directories relative to project_directory
+inputdir_Spock1               Spock0_calib_output
+outputdir_Spock1              Spock1_pre_processing

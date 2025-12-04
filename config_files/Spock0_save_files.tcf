@@ -1,0 +1,15 @@
+#################################################################################
+# Spock 0: Initialisation
+#################################################################################
+
+
+# Instrument used: Choose between "JWST_NIRSPEC", "JWST_NIRCAM", "JWST_NIRISS", "EFOSC2", "ACAM" and "KECK"
+instrument                 EFOSC2
+
+# Project Folder
+project_dir                "."
+
+
+# Directories relative to project_directory
+inputdir_Spock0            input_folder
+outputdir_Spock0           Spock0_calib_output
