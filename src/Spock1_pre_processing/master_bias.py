@@ -12,7 +12,7 @@ import sys
 import glob
 from PIL import Image
 from pathlib import Path
-from utils import get_bool_attr
+from global_utils.global_utils import get_bool_attr, get_fits_image_extensions_from_config
 
 # Prevent matplotlib flipping images
 plt.rcParams['image.origin'] = 'lower'
@@ -123,9 +123,9 @@ def create_bias_gif(instrument, save_dir):
 #  BIAS COMBINATION FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def combine_biases_1window(bias_files, instrument, instr_cfg, save_dir, verbose=False, savefig=False, eyeball=False):
+def combine_biases_1window(bias_files, instrument, instr_cfg, idx_list, save_dir, verbose=False, savefig=False, eyeball=False):
     """Calculate the combined biases for 1 window"""
-    idx = instr_cfg.image_extension
+    idx = idx_list[0]
     id_slice = slice(*instr_cfg.id_slice)
 
     bias_data = []
@@ -142,7 +142,7 @@ def combine_biases_1window(bias_files, instrument, instr_cfg, save_dir, verbose=
         if verbose or savefig:
             plot_dir = save_dir + '/plots'
             Path(plot_dir).mkdir(exist_ok=True)
-            png_name = f"{plot_dir}/{instrument}_{n:03d}.png"
+            png_name = f"{plot_dir}/{instrument}_{n+1:03d}.png"
             plot_bias_frame(data_frame, title=f"{frame_id}", save_as=png_name, verbose=verbose, savefig=savefig)
 
         if eyeball:
@@ -162,10 +162,8 @@ def combine_biases_1window(bias_files, instrument, instr_cfg, save_dir, verbose=
     return np.median(np.array(bias_data), axis=0)
 
 
-def combine_biases_2windows(bias_files, instrument, instr_cfg, save_dir, verbose=False, savefig=False): 
+def combine_biases_2windows(bias_files, instrument, instr_cfg, idx_list, save_dir, verbose=False, savefig=False): 
     """Calculate the combined biases for 2 windows seperately"""
-    if instrument == "ACAM":
-        idx_list = [1, 2]
     id_slice = slice(*instr_cfg.id_slice)
 
 
@@ -187,7 +185,7 @@ def combine_biases_2windows(bias_files, instrument, instr_cfg, save_dir, verbose
             if verbose or savefig:
                 plot_dir = save_dir + '/plots'
                 Path(plot_dir).mkdir(exist_ok=True)
-                png_name = f"{plot_dir}/{instrument}_{n:03d}.png"
+                png_name = f"{plot_dir}/{instrument}_{n+1:03d}.png"
                 plot_bias_frame(window_frames, title=f"{frame_id}", save_as=png_name, verbose=verbose, savefig=savefig)
 
     return np.array([np.median(bias_data[i], axis=0) for i in range(len(idx_list))])
@@ -216,29 +214,19 @@ def create_master_bias(meta, instr_cfg):
     Path(save_dir).mkdir(exist_ok=True)
     
     bias_files = np.loadtxt(biaslist, str)
-
-    if instrument == "ACAM":
-        test_file = bias_files[0]
-        hdul = fits.open(test_file)
-        n_extensions = len(hdul)
-        hdul.close()
-
-        if n_extensions == 2:
-            nwin = 1
-        elif n_extensions == 3:
-            nwin = 2
-        
-    else:  # For all other instruments
-        nwin = 1 
+    
+    test_file = bias_files[0]
+    idx_list = get_fits_image_extensions_from_config(instr_cfg, test_file)
+    nwin = len(idx_list)
 
     # Combine frames
     if nwin == 1:
         master_bias = combine_biases_1window(
-            bias_files, instrument, instr_cfg, save_dir, verbose, savefig, eyeball
+            bias_files, instrument, instr_cfg, idx_list, save_dir, verbose, savefig, eyeball
         )
     else:
         master_bias = combine_biases_2windows(
-            bias_files, instrument, instr_cfg, save_dir, verbose, savefig
+            bias_files, instrument, instr_cfg, idx_list, save_dir, verbose, savefig
         )
 
     # Save FITS
@@ -262,7 +250,7 @@ def create_master_bias(meta, instr_cfg):
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     import xarray as xr 
-    from InstrumentDataClass import load_instrument_config
+    from global_utils.InstrumentDataClass import load_instrument_config
 
     meta = xr.Dataset()
     meta.attrs['instrument'] = 'EFOSC2'
