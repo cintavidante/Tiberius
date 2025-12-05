@@ -1,24 +1,43 @@
 #### Author of this code: James Kirk
 #### Contact: jameskirk@live.co.uk
 
-import matplotlib.pyplot as plt
-from astropy.io import fits
-import numpy as np
 import argparse
-from scipy.ndimage import median_filter
 import pickle
 import os
 import copy
 import glob
-import imageio.v3 as iio
 import shutil
+
+import numpy as np
+import xarray as xr
+# import imageio.v3 as iio
+import matplotlib.pyplot as plt
+
+from astropy.io import fits
+from scipy.ndimage import median_filter
+from datetime import datetime, timezone
 
 # Prevent matplotlib plotting frames upside down
 plt.rcParams['image.origin'] = 'lower'
 
 # ------------------------------------------------------------------------------------------
 
-def locate_zeroes(plot_neg_cosmic_map, plot_neg_med_map, plot_dir):
+def save_to_xarray(array, array_dir, name, pixelclip, bias_path):
+
+    # Make a xarray
+    bad_pixels_da = xr.DataArray(array, name=name)
+        
+    # Add attributes (metadata)
+    bad_pixels_da.attrs['locate_cosmic_sigma'] = pixelclip
+    bad_pixels_da.attrs['master_bias'] = bias_path
+    bad_pixels_da.attrs['date'] = datetime.now(timezone.utc).isoformat()
+
+    # Output as h5 
+    bad_pixels_da.to_netcdf(array_dir + f"/{name}.h5", engine="h5netcdf")
+
+# ---------------------------------------------
+
+def locate_zeroes(nframes, plot_neg_cosmic_map, plot_neg_med_map, plot_dir, showfig, savefig):
 
     neg_plot_dir = os.path.join(plot_dir, 'negative_median')
     os.makedirs(neg_plot_dir, exist_ok=True)
@@ -39,7 +58,13 @@ def locate_zeroes(plot_neg_cosmic_map, plot_neg_med_map, plot_dir):
         
         # Save the plot
         filename = os.path.join(neg_plot_dir, 'cosmic_negative_median_frame_{}.png'.format(n))
-        plt.savefig(filename)
+
+        if savefig:
+            plt.savefig(filename)
+        if showfig:
+            plt.show(block=False)
+            plt.pause(1e-6)
+
         plt.close()
 
 
@@ -54,12 +79,19 @@ def locate_zeroes(plot_neg_cosmic_map, plot_neg_med_map, plot_dir):
         
         # Save the plot
         filename = os.path.join(neg_plot_dir, 'negative_median_frame_{}.png'.format(n))
-        plt.savefig(filename)
+
+        if savefig:
+            plt.savefig(filename)
+        if showfig:
+            plt.show(block=False)
+            plt.pause(1e-6)
+
         plt.close()
 
 # ---------------------------------------------
 
-def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, verbose=False):
+def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, plot_path,
+                      showfig=False, savefig=False):
     """The function that locates the frames/pixels where cosmics are located.
 
     Inputs:
@@ -67,7 +99,7 @@ def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, verbose=Fal
     pixel_row - the row number of the pixel under consideration
     pixel_col - the column number of the pixel under consideration
     cut_off - the sigma cut off / outlier rejection threshold
-    verbose - True/False - plot the outlier identififcation for this pixel?
+    showfig - True/False - plot the outlier identififcation for this pixel?
 
     Returns:
     bad_frames - the array of frames for which this pixel is an outlier"""
@@ -89,7 +121,8 @@ def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, verbose=Fal
     # ignore the nans (saturated pixels)
     bad_frames[~np.isfinite(residuals)] = False
 
-    if verbose: # plot output
+    if showfig or savefig: # plot output
+
         plt.figure()
         plt.subplot(211)
         plt.plot(pixel,label="Pixel value")
@@ -103,18 +136,22 @@ def locate_bad_frames(image_data, pixel_row, pixel_col, cut_off_arr, verbose=Fal
         plt.ylabel("Residuals")
         plt.xlabel("Frame")
         plt.plot(residuals)
-        plt.axhline(cut_off*np.nanstd(residuals),ls='--',color='k')
-        plt.axhline(cut_off*-np.nanstd(residuals),ls='--',color='k',label="cut-off")
+        plt.axhline(cut_off_arr*np.nanstd(residuals),ls='--',color='k')
+        plt.axhline(cut_off_arr*-np.nanstd(residuals),ls='--',color='k',label="cut-off")
         plt.plot(np.arange(nframes)[bad_frames],residuals[bad_frames],"rx",label="Flagged outliers")
         plt.legend()
-        plt.show()
-        plt.savefig('locate_cosmic.png')
+
+        if savefig:
+            plt.savefig(plot_path + '/locate_cosmic.png')
+        if showfig:
+            plt.show()
+
 
     return bad_frames, median
 
 # ---------------------------------------------
 
-def plot_cosmic_frames(cosmic_pixels, cut_off_arr, plotdir):
+def plot_cosmic_frames(cosmic_pixels, cut_off_arr, plotdir, showfig=False, savefig=False):
 
     """A function that plots all cosmics frames"""
     plt.figure(figsize=[15, 12])
@@ -142,16 +179,18 @@ def plot_cosmic_frames(cosmic_pixels, cut_off_arr, plotdir):
 
         filename = os.path.join(plotdir, 'cosmic_frames_{}.png'.format(n))
 
-        plt.savefig(filename)
-        plt.show(block=False)
-        plt.pause(1e-6)
+        if savefig:
+            plt.savefig(filename)
+        if showfig:
+            plt.show(block=False)
+            plt.pause(1e-6)
         plt.clf()
     
     return 
 
 # ---------------------------------------------
 
-def check_cosmic_frames(cosmic_pixels, frame_cut_off):
+def check_cosmic_frames(cosmic_pixels, frame_cut_off, plot_dir, showfig=False, savefig=False):
     """A function that plots and optionally resets cosmic pixels for frames where a disproportionate number of pixels have been flagged as cosmics.
 
     Inputs:
@@ -160,7 +199,13 @@ def check_cosmic_frames(cosmic_pixels, frame_cut_off):
     Returns:
     cosmic_pixels - the new array of all cosmic flagged pixels, taking into the account the user-defined reset frame masks"""
 
-    nframes,nrows,ncols = cosmic_pixels.shape
+    # Make plotting path
+    plot_path = os.path.join(plot_dir, "too_many_cosmic")
+
+    # Create folder
+    os.makedirs(plot_path, exist_ok=True)
+    
+    nframes, nrows, ncols = cosmic_pixels.shape
 
     ncosmics = []
 
@@ -175,18 +220,33 @@ def check_cosmic_frames(cosmic_pixels, frame_cut_off):
 
     incorrectly_flagged_cosmics = []
 
-    for i,c in enumerate(cosmic_pixels):
+    for i, c in enumerate(cosmic_pixels):
+
         ncosmics = len(np.where(c==1)[0])
+
         if ncosmics > frame_cut_off*median_cosmics:
+
             print("Integration %d has %.2fX the median number of cosmics, somethings up"%(i,ncosmics/median_cosmics))
+
             plt.figure()
             plt.imshow(c,cmap='Greys', interpolation='none',aspect="auto")
             incorrectly_flagged_cosmics.append(i)
             plt.title("Integration %d"%i)
             plt.ylabel("Pixel row")
             plt.xlabel("Pixel column")
-            plt.show(block=False)
-            # plt.clf()
+
+            if i < 9:
+                n = '0{}'.format(i+1)
+            else:
+                n = i + 1
+
+            if savefig:
+                plt.savefig(plot_path + f'/suspicious_cosmic_frames_{n}.png')
+
+            if showfig:
+                plt.show(block=False)
+
+            plt.clf()
 
             reset_mask = input("Reset mask for integration %d? [y/n]: "%i)
             if reset_mask == "y":
@@ -197,8 +257,8 @@ def check_cosmic_frames(cosmic_pixels, frame_cut_off):
 
 # ---------------------------------------------
 
-def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, jwst=False, 
-                    cleaned_direc=os.getcwd(), bias=False, master_bias=None):
+def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, instrument, 
+                    cleaned_direc=os.getcwd(), master_bias=None):
 
     """
     Function to replace cosmic pixels with median values in the science fits files.
@@ -231,7 +291,7 @@ def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, j
     nframes, nrows, ncols = cosmic_pixels.shape
     total_nints = nints[-1]
 
-    if jwst:
+    if instrument == 'JWST':
 
         for i,c in enumerate(cosmic_pixels):
 
@@ -268,8 +328,7 @@ def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, j
         f = fits.open(science_list[i])
         f_new = copy.deepcopy(f)
 
-        if bias:
-            f_new[0].data = f_new[0].data - master_bias
+        f_new[0].data = f_new[0].data - master_bias
 
         # Filename from science list
         filename = science_list[i].split("/")[-1]
@@ -285,66 +344,71 @@ def replace_cosmics(cosmic_pixels, medians, science_list, nints, cut_off_name, j
         f_new.writeto(file_path, overwrite=True)
         f.close()
     
-    new_list = input("Do you want to overwrite the cleaned science list for this pixel clip group? [y/n]: ")
+    # new_list = input("Do you want to overwrite the cleaned science list for this pixel clip group? [y/n]: ")
 
-    if new_list == "y":
+    # if new_list == "y":
     
-        # Make a new file list for the cleaned cosmic fits
-        print('Making new list for cleaned cosmic fits...')
+    #     # Make a new file list for the cleaned cosmic fits
+    #     print('Making new list for cleaned cosmic fits...')
 
-        # Read the global path for all cleaned cosmic fits
-        file_path = os.path.join(cleaned_direc, '*.fits')
-        all_files = sorted(glob.glob(file_path))
+    #     # Read the global path for all cleaned cosmic fits
+    #     file_path = os.path.join(cleaned_direc, '*.fits')
+    #     all_files = sorted(glob.glob(file_path))
 
-        # Write a new list. This makes sure it's overwriting new files!!!
-        with open(args.sciencelist + '_cleaned_' + cut_off_name, 'w') as new_list:
+    #     # Write a new list. This makes sure it's overwriting new files!!!
+    #     with open(args.sciencelist + '_cleaned_' + cut_off_name, 'w') as new_list:
 
-            for files in all_files:
-                new_list.write(files+' \n')
+    #         for files in all_files:
+    #             new_list.write(files+' \n')
 
     return
 
 # ------------------------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def locate_and_correct_cosmic(meta):
 
-    # Set up the argument parser
-    # -----------------------------------------
+    # Read meta database
+    instrument = meta.attrs["instrument"]
+    sciencelist = meta.attrs["science_list"]
+    inputdir = meta.attrs["inputdir_Spock1"]
+    save_dir = meta.attrs["outputdir_Spock1"]
+    pixelclip = meta.attrs["locate_cosmics_pixelclip"]
+    frameclip = meta.attrs["locate_cosmics_frameclip"]
+    showfig = meta.attrs["locate_cosmics_showfig"]
+    savefig = meta.attrs["locate_cosmics_savefig"]
+    cleaned = meta.attrs["locate_cosmics_cleanedfits"]
+    badpixel = meta.attrs["locate_cosmics_badpixelmask"]
+    groups = meta.attrs["locate_cosmics_groups"]
+    gifs = meta.attrs["locate_cosmics_gifs"]
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('sciencelist', help="""Enter list of science .fits file names""")
-    parser.add_argument('-b','--bias_frame',help="""Define the bias frame. Not essential, can be run without a bias frame.""")
-    parser.add_argument('-mask','--bad_pixel_mask',help="""Optionally parse in a bad pixel mask to ignore these pixels from the cosmic flagging""")
-    parser.add_argument('-row','--rows',help="""Optionally define the row location of n test pixels before executing all rows""",type=int,nargs="+")
-    parser.add_argument('-col','--cols',help="""Optionally define the column location of n test pixels before executing all columns""",type=int,nargs="+")
-    parser.add_argument('-pixel_clip','--pixel_clip',help="""Define the outlier rejection threshold/sigma clip. Default = 5""",type=float,default=5.)
-    parser.add_argument('-frame_clip','--frame_clip',help="""Define the multiplicative factor at which a frame's rejection 
-                                                            detection is deemed to have failed. Default = 3, i.e. if a frame has 3x the median number of cosmics, 
-                                                            it's deemed to potentially have failed.""",type=float,default=3.)
-    parser.add_argument('-v','--verbose',help="""Display all cosmic pixel masks""",action='store_true')
-    parser.add_argument('-jwst','--jwst',help="""Use this option if we're looking at JWST data as the input fits files have a different format""",action='store_true')
-    parser.add_argument('-t', '--file_type', help="""Define file type for folder naming""",type=str)
-    parser.add_argument('-g', '--gif', help="""Make gifs of cosmic frame plots""",action='store_true')
-    parser.add_argument('-n', '--n_group', help="""Number of groups with different sigma clip. 
-                                                The -pixel_clip is for the majority of the group.
-                                                If n_group > 1 then it will prompt a question of how many
-                                                groups that will be created.""",type=int, default=1)
+    if badpixel:
+        badpixelpath = meta.attrs["bad_pixel_mask"]
+        badpixellist = os.path.join(save_dir, "bad_pixel_mask", badpixelpath)
 
-
-    args = parser.parse_args()
+    if groups:
+        grouplist = meta.attrs["locate_cosmics_groups"]
 
     # Loading data
     # ----------------------------------------
 
     # Load in the list of science file names
-    science_list = np.atleast_1d(np.loadtxt(args.sciencelist,dtype=str))
+    sciencepath = os.path.join(inputdir, sciencelist)
+    science_list = np.atleast_1d(np.loadtxt(sciencepath, dtype=str))
 
-    # Optionally load in the master bias
-    if args.bias_frame is not None:
-        master_bias = fits.open(args.bias_frame)[0].data
-        bias = True
-    else:
-        bias = False
+    # Check instrument 
+    if instrument != 'EFOSC2' and instrument != 'ACAM' and instrument != 'JWST':
+        raise ValueError('Currently only set up to deal with EFOSC2/ACAM/JWST')
+
+    # Find master bias
+    # Here I do not allow the option to not reduce the image with bias beforehand
+    bias_path = os.path.join(save_dir, 'bias', 'master_bias.fits')
+
+    # If bias is not there, raise error
+    if not os.path.isfile(bias_path):
+        raise FileNotFoundError(f"Bias file not found at: {bias_path}")
+
+    # Load master bias
+    master_bias = fits.open(bias_path)[0].data
 
     # Load in the science data
     print("Loading in data...")
@@ -355,32 +419,35 @@ if __name__ == "__main__":
 
         f = fits.open(s,memmap=False)
 
-        if args.jwst:
+        if instrument == 'JWST':
             data.append(f["SCI"].data)
             nints.append(f["SCI"].data.shape[0])
         else:
-            if bias: # subtract the bias if using one
-                data.append(f[0].data - master_bias)
-            else:
-                data.append(f[0].data)
-
+            data.append(f[0].data - master_bias)
             nints.append(f[0].data.shape[0])
 
         f.close()
-
+    
     nints = np.cumsum(nints)
 
     # Define data depending if it's JWST data or not 
-    if args.jwst:
+    if instrument == 'JWST':
         data = np.vstack(data)
     else:
         data = np.array(data)
 
     # Load bad pixel mask if provided
-    if args.bad_pixel_mask is not None:
-        mask = pickle.load(open(args.bad_pixel_mask,"rb"))
-        data[:,mask] = np.nan
+    if badpixel:
 
+        # Read h5 xarray
+        bpm = xr.open_dataset(badpixellist, engine="h5netcdf")
+
+        # Convert xarray to numpy array
+        mask = bpm[list(bpm.data_vars)[0]].values
+
+        # Mask the data
+        data[:,mask] = np.nan
+    
     # Definitons
     # ----------------------------------------
 
@@ -389,7 +456,7 @@ if __name__ == "__main__":
     nframes, nrows, ncols = data.shape
 
     # Define the sigma cut off
-    cut_off = args.pixel_clip
+    cut_off = pixelclip
 
     # Make an array of pixel_clip
     cut_off_arr = np.full(nframes, cut_off, dtype=float)
@@ -397,42 +464,43 @@ if __name__ == "__main__":
     # print(cut_off_arr)
 
     # If n_group > 1, then we will ask which frames and which sigma values to use
-    if args.n_group > 1:
+    # if args.n_group > 1:
 
-        for m in range(args.n_group -1):
+    #     for m in range(args.n_group -1):
 
-            # Ask for sigma clip
-            cut_val = float(input("Enter sigma value: "))
-            frame_list = input("Enter frames number separated by space: ")
-            frame_list = list(map(int, frame_list.split()))
-            frame_list = np.array(frame_list) - 1  # Convert to zero-based index
+    #         # Ask for sigma clip
+    #         cut_val = float(input("Enter sigma value: "))
+    #         frame_list = input("Enter frames number separated by space: ")
+    #         frame_list = list(map(int, frame_list.split()))
+    #         frame_list = np.array(frame_list) - 1  # Convert to zero-based index
 
-            cut_off_arr[frame_list] = cut_val
+    #         cut_off_arr[frame_list] = cut_val
 
     # Find unique values in sigma / cut_off
     sigmas = np.unique(cut_off_arr)
 
     # Join them the unique sigmas to be a string
-    cut_off_name = "_".join([str(s) for s in sigmas])
+    sigma_name = "_".join([str(s) for s in sigmas])
+
+    # Make directory for different sigma 
+
 
     # Set up working directory
     # -----------------------------------------
 
-    # Get the current working directory
-    pwd = os.getcwd()
+    # Define directory for outputs
+    cosmic_dir = os.path.join(save_dir, 'cosmic_rays')
+    sigma_dir = os.path.join(cosmic_dir, f'sigma_{sigma_name}')
+    plot_output = os.path.join(sigma_dir, 'output')
+    gif_output = os.path.join(plot_output, "all_frames")
+    cleaned_dir = os.path.join(save_dir, 'cleaned_images')
 
-    # Automatically make a new folder
-    # The pixel clip here is the majority of the clip for the frames
-    direc = os.path.join(pwd, 'cosmic/{}_sigma_{}'.format(args.file_type, cut_off_name))
-
-    # Make sure that directory exists
-    os.makedirs(direc, exist_ok=True)
-
-    # # If using the verbose option for the median filter, I'm assuming this is a test so I don't run the full script
-    # if args.rows is not None:
-    #     for r,c in zip(args.rows,args.cols):
-    #         locate_bad_frames(data, r, c, cut_off, verbose=True)
-    #     raise SystemExit
+    # Make the directory
+    os.makedirs(cosmic_dir, exist_ok=True)
+    os.makedirs(sigma_dir, exist_ok=True)
+    os.makedirs(plot_output, exist_ok=True)
+    os.makedirs(gif_output, exist_ok=True)
+    os.makedirs(cleaned_dir, exist_ok=True)
 
     # Make data arrays for cosmic pixels and median values
     # ----------------------------------------
@@ -450,7 +518,8 @@ if __name__ == "__main__":
         for col in range(ncols):
 
             # Get bad frames and medians
-            bad_frames, medians = locate_bad_frames(data, row, col, cut_off_arr, verbose=False)
+            bad_frames, medians = locate_bad_frames(data, row, col, cut_off_arr, plot_output, 
+                                                    showfig=False, savefig=False)
 
             # Append to the cosmic pixels and median values arrays
             cosmic_pixels[:,row,col][bad_frames] = 1
@@ -460,85 +529,74 @@ if __name__ == "__main__":
     cosmic_pixels = cosmic_pixels.astype(bool)
 
     # When there is possibility of negative median values
-    if args.bias_frame is not None:
+    # if args.bias_frame is not None:
 
-        # Negative median pixels for cosmic pixels
-        neg_cosmic_map = cosmic_pixels & (median_values < 0)
-        # plot_neg_cosmic_map = np.where(neg_cosmic_map, 1, 0)
+    # Negative median pixels for cosmic pixels
+    neg_cosmic_map = cosmic_pixels & (median_values < 0)
+    # plot_neg_cosmic_map = np.where(neg_cosmic_map, 1, 0)
 
-        # Negative median in general
-        all_array = np.full_like(median_values, True, dtype=bool)
-        neg_med_map = all_array & (median_values < 0)
-        # plot_neg_med_map = np.where(neg_med_map, 1, 0) 
+    # Negative median in general
+    all_array = np.full_like(median_values, True, dtype=bool)
+    neg_med_map = all_array & (median_values < 0)
+    # plot_neg_med_map = np.where(neg_med_map, 1, 0) 
 
-        # Change median values that is negative to zero
-        median_values[median_values < 0] = 0
+    # Change median values that is negative to zero
+    median_values[median_values < 0] = 0
 
     # Outputs
     # ----------------------------------------
 
-    # Plotting directory
-    plot_dir = os.path.join(direc, "plots")
-    os.makedirs(plot_dir, exist_ok=True)
-
-    # Cleaned fits directory
-    cleaned_dir = os.path.join(direc, "cleaned_fits")
-    os.makedirs(cleaned_dir, exist_ok=True)
-
-    if args.verbose:
+    if showfig or savefig:
 
         print("\nPlotting all cosmic-masked pixels...\n")
-        plot_cosmic_frames(cosmic_pixels, cut_off_arr, plot_dir)
-
-    # double-check the output
-    if not args.verbose:
+        plot_cosmic_frames(cosmic_pixels, cut_off_arr, gif_output, showfig, savefig)
 
         print("\nPlotting frames with high number of cosmics...\n")
-        cosmic_pixels = check_cosmic_frames(cosmic_pixels,args.frame_clip)
+        cosmic_pixels = check_cosmic_frames(cosmic_pixels, frameclip, plot_output, showfig, savefig)
 
     # Save the cosmic masks
-    pickle.dump(cosmic_pixels, 
-                open(os.path.join(direc, "cosmic_pixel_mask_{}_sigma_clip.pickle".format(cut_off_name)), "wb"))
+    name_file = f'cosmic_pixel_mask_sigma{sigma_name}'
+    save_to_xarray(cosmic_pixels, sigma_dir, name_file, sigma_name, bias_path)
     
     
     # For possibility of negative median values
-    if args.bias_frame is not None:
+    # if args.bias_frame is not None:
         
-        print("\nBecause bias is provided, plotting pixels with negative median values...\n")
-        locate_zeroes(neg_cosmic_map, neg_med_map, plot_dir)
-    
-        # Save cosmic masks where the median values were supposed to be negative
-        pickle.dump(neg_cosmic_map,
-                    open(os.path.join(direc, "cosmic_pixel_mask_neg_median_{}_sigma_clip.pickle".format(cut_off_name)), "wb"))
+    print("\nBecause bias is provided, plotting pixels with negative median values...\n")
+    locate_zeroes(nframes, neg_cosmic_map, neg_med_map, plot_output, showfig, savefig)
+
+    # Save cosmic masks where the median values were supposed to be negative
+    name_file = f'where_negative_median_is_sigma_{sigma_name}'
+    save_to_xarray(neg_cosmic_map, sigma_dir, name_file, sigma_name, bias_path)
 
     # optionally save new fits files with cosmics replaced by median pixel values
     # note: this doesn't offer much improvement over the interpolation performed in long_slit_science_extraction.py
 
     # Make gifs
-    if args.gif:
+    # if gifs:
 
-        print("\nMaking gifs...\n")
+    #     print("\nMaking gifs...\n")
 
-        # Initialize list
-        images = list()
+    #     # Initialize list
+    #     images = list()
 
-        # Gif path
-        gif_path = os.path.join(plot_dir, "cosmic_frames_combined.gif")
+    #     # Gif path
+    #     gif_path = os.path.join(sigma_dir, "cosmic_frames_combined.gif")
         
-        # Read all files from folder and append to list
-        for filename in sorted(os.listdir(plot_dir)):
+    #     # Read all files from folder and append to list
+    #     for filename in sorted(os.listdir(gif_output)):
 
-            filepath = os.path.join(plot_dir, filename)
+    #         filepath = os.path.join(gif_output, filename)
 
-            if filename.endswith(".jpg") or filename.endswith(".png"):
-                if not os.path.isfile(filepath):
-                    continue
+    #         if filename.endswith(".jpg") or filename.endswith(".png"):
+    #             if not os.path.isfile(filepath):
+    #                 continue
 
-                images.append(iio.imread(filepath))
+    #             images.append(iio.imread(filepath))
         
-        # Make gif
-        # Duration is in n/1000 seconds per frame. duration=500 means 0.5 seconds per frame
-        iio.imwrite(gif_path, images, loop=1, duration=500)
+    #     # Make gif
+    #     # Duration is in n/1000 seconds per frame. duration=500 means 0.5 seconds per frame
+    #     iio.imwrite(gif_path, images, loop=1, duration=500)
     
     # print(median_values[1])
     # print('----')
@@ -548,11 +606,75 @@ if __name__ == "__main__":
     # plt.imshow(cosmic_pixels[1], cmap='viridis', origin='lower')
     # plt.colorbar()
     # plt.savefig(os.path.join(direc, 'cosmic_pixels_frame_1.png'))
-
-    # Replace cosmic?
-    replace = input("Replace cosmic values with median and save to new fits? [y/n]: ")
     
-    if replace == "y":
+    if cleaned:
         replace_cosmics(cosmic_pixels, median_values, science_list, 
-                        nints, cut_off_name, args.jwst, cleaned_direc=cleaned_dir,
-                        bias=bias, master_bias=master_bias)
+                        nints, sigma_name, instrument, cleaned_direc=cleaned_dir,
+                        master_bias=master_bias)
+
+# ------------------------------------------------------------------------------------------
+
+if __name__ == "__main__":
+
+    meta = xr.Dataset()
+
+    meta.attrs['instrument'] = 'EFOSC2'
+    meta.attrs['science_list'] = 'HAT-P-65_Gr11_27arcsec_list'
+    meta.attrs['inputdir_Spock1'] = 'Spock0_calib_output'
+    meta.attrs['outputdir_Spock1'] = 'Spock1_pre_processing'
+    meta.attrs['locate_cosmics_pixelclip'] = 7
+    meta.attrs['locate_cosmics_frameclip'] = 10
+    meta.attrs['locate_cosmics_showfig'] = False
+    meta.attrs['locate_cosmics_savefig'] = True
+    meta.attrs['locate_cosmics_overwrite'] = True 
+
+    meta.attrs['locate_cosmics_badpixelmask'] = True 
+    meta.attrs['bad_pixel_mask'] = 'bad_pixel_mask_loose.h5'
+
+    meta.attrs['locate_cosmics_groups'] = False 
+    meta.attrs['locate_cosmics_gifs'] = False
+    meta.attrs['locate_cosmics_cleanedfits'] = False
+ 
+    locate_and_correct_cosmic(meta)
+
+# ------------------------------------------------------------------------------------------
+
+    
+
+    # Set up the argument parser
+    # -----------------------------------------
+
+    # parser = argparse.ArgumentParser()
+    # parser.add_argument('sciencelist', help="""Enter list of science .fits file names""")
+    # parser.add_argument('-b','--bias_frame',help="""Define the bias frame. Not essential, can be run without a bias frame.""")
+    # parser.add_argument('-mask','--bad_pixel_mask',help="""Optionally parse in a bad pixel mask to ignore these pixels from the cosmic flagging""")
+    # parser.add_argument('-row','--rows',help="""Optionally define the row location of n test pixels before executing all rows""",type=int,nargs="+")
+    # parser.add_argument('-col','--cols',help="""Optionally define the column location of n test pixels before executing all columns""",type=int,nargs="+")
+    # parser.add_argument('-pixel_clip','--pixel_clip',help="""Define the outlier rejection threshold/sigma clip. Default = 5""",type=float,default=5.)
+    # parser.add_argument('-frame_clip','--frame_clip',help="""Define the multiplicative factor at which a frame's rejection 
+    #                                                         detection is deemed to have failed. Default = 3, i.e. if a frame has 3x the median number of cosmics, 
+    #                                                         it's deemed to potentially have failed.""",type=float,default=3.)
+    # parser.add_argument('-v','--verbose',help="""Display all cosmic pixel masks""",action='store_true')
+    # parser.add_argument('-jwst','--jwst',help="""Use this option if we're looking at JWST data as the input fits files have a different format""",action='store_true')
+    # parser.add_argument('-t', '--file_type', help="""Define file type for folder naming""",type=str)
+    # parser.add_argument('-g', '--gif', help="""Make gifs of cosmic frame plots""",action='store_true')
+    # parser.add_argument('-n', '--n_group', help="""Number of groups with different sigma clip. 
+    #                                             The -pixel_clip is for the majority of the group.
+    #                                             If n_group > 1 then it will prompt a question of how many
+    #                                             groups that will be created.""",type=int, default=1)
+
+
+    # args = parser.parse_args()
+
+    # Optionally load in the master bias
+    # if args.bias_frame is not None:
+    #     master_bias = fits.open(args.bias_frame)[0].data
+    #     bias = True
+    # else:
+    #     bias = False
+
+    # # If using the verbose option for the median filter, I'm assuming this is a test so I don't run the full script
+    # if args.rows is not None:
+    #     for r,c in zip(args.rows,args.cols):
+    #         locate_bad_frames(data, r, c, cut_off, verbose=True)
+    #     raise SystemExit
