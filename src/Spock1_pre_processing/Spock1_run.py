@@ -1,0 +1,45 @@
+####################################################################
+# Spock 1: Pre-processing the data
+####################################################################
+
+import xarray as xr
+import os
+from global_utils.utils import get_bool_attr
+from global_utils.MetaDataClass import BorgCollective
+from global_utils.InstrumentDataClass import load_instrument_config
+from Spock1_pre_processing.master_bias import create_master_bias
+#from reduction_utils.master_flat_new import create_master_flat
+#from ... import locate_cosmics
+#from ... import bad_pixel_mask
+
+def run_Spock1_pre_processing():
+    # Read in the metadata from previous spock and combine it with current spock
+    meta = BorgCollective(spock=1)
+    meta.read_tcf("Spock1_pre_processing.tcf")
+
+    previous_meta = xr.open_dataset("Spock0_calib_output/reduction_log_Spock0.h5", engine='h5netcdf')
+    meta.combine(previous_meta)
+
+    # Read in the Instrument static parameters
+    instr_cfg = load_instrument_config(meta.ds.attrs["instrument"].strip("'"))
+
+    # Build the 
+    os.makedirs("Spock1_pre_processing", exist_ok = True)
+
+    if get_bool_attr(meta.ds.attrs["skip_bias"]) == False:
+        master_bias = create_master_bias(meta, instr_cfg)
+
+    if get_bool_attr(meta.ds.attrs["skip_flats"]) == False:
+        master_flats = create_master_flats(meta, instr_cfg)
+
+    #if get_bool_attr(meta.ds.attrs["skip_cosmics"]) == False:
+    #
+
+
+    meta.write("reduction_log_Spock1.h5")
+
+
+if __name__ == "__main__":
+
+    run_Spock1_pre_processing()
+    
