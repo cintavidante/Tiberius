@@ -193,12 +193,10 @@ if __name__ == "__main__":
     # Example usage
     ds = xr.Dataset()
     ds.attrs['instrument'] = 'EFOSC2'
-    ds.attrs['inputdir'] = 'project_folder/input'
-    ds.attrs['outputdir'] = 'project_folder/stage0'
+    ds.attrs['inputdir'] = 'input'
+    ds.attrs['outputdir'] = 'Spock0_calib_output'
     
     sort_the_images(ds)
-
-
 
 # # Current working directory
 # pwd = os.getcwd()
