@@ -71,7 +71,7 @@ def plot_flat_frame(f, nwin, verbose=False, flat_output=os.getcwd()):
 
 
 # ---------------------------------------------------------------------------
-# FLAT HELPERS
+# FLAT AND BAD MASK HELPERS
 # ---------------------------------------------------------------------------
 
 def bias_subtraction(master_bias, data):
@@ -86,6 +86,24 @@ def save_fits(data, filename, overwrite=False):
     hdu.writeto(filename, overwrite=overwrite)
 
     return
+
+# -----------------------------------
+
+def save_to_xarray(bad_pixels, bad_pixel_dir, name, method, cut_off=None):
+
+    # Make a xarray
+    bad_pixels_da = xr.DataArray(bad_pixels, name=name)
+        
+    # Add attributes (metadata)
+    bad_pixels_da.attrs['method'] = method
+    bad_pixels_da.attrs['date'] = datetime.now(timezone.utc).isoformat()
+
+    if cut_off != None:
+        bad_pixels_da.attrs['median_cut_off'] = cut_off
+
+    
+    # Output as h5 
+    bad_pixels_da.to_netcdf(bad_pixel_dir + f"/{name}.h5", engine="h5netcdf")
 
 # ---------------------------------------------------------------------------
 # FLAT COMBINATION FUNCTIONS
@@ -450,24 +468,6 @@ def gaussian_smooth(flat_data, name, nwindows, instrument,
 # ---------------------------------------------------------------------------
 # BAD PIXEL MASKING FUNCTIONS
 # ---------------------------------------------------------------------------
-
-def save_to_xarray(bad_pixels, bad_pixel_dir, name, method, cut_off=None):
-
-    # Make a xarray
-    bad_pixels_da = xr.DataArray(bad_pixels, name=name)
-        
-    # Add attributes (metadata)
-    bad_pixels_da.attrs['method'] = method
-    bad_pixels_da.attrs['date'] = datetime.now(timezone.utc).isoformat()
-
-    if cut_off != None:
-        bad_pixels_da.attrs['median_cut_off'] = cut_off
-
-    
-    # Output as h5 
-    bad_pixels_da.to_netcdf(bad_pixel_dir + f"/{name}.h5", engine="h5netcdf")
-
-# -----------------------------------
 
 def pixel_mask_tight(frame, save, verbose=False, 
                      bad_pixel_dir=os.getcwd(), 
