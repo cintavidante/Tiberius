@@ -25,6 +25,8 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+.DS_Store
+src/.DS_Store
 src/_version.py
 MANIFEST
 
@@ -131,14 +133,9 @@ dmypy.json
 
 *.pyc
 
-# Project file 
+# Test Files 
 /hatp65
 /project_folder
-/config
-
-# Other notebooks
 dummy_file.py
 xarray_test.ipynb
-
-# Other files
 test.tcf
