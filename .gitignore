@@ -26,6 +26,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 .DS_Store
+.bashrc
 src/.DS_Store
 src/_version.py
 MANIFEST
