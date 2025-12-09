@@ -134,9 +134,3 @@ dmypy.json
 
 *.pyc
 
-# Test Files 
-/hatp65
-/project_folder
-dummy_file.py
-xarray_test.ipynb
-test.tcf

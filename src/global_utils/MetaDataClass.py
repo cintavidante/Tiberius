@@ -6,6 +6,10 @@ from importlib.metadata import version, PackageNotFoundError
 class BorgCollective:
     " A class that contains Tiberius MetaData "
 
+    # -------------------------------------------------
+    # Initialisation
+    # -------------------------------------------------
+
     def __init__(self, spock: int):
         "Initialise an empty dataset with base attributes"
         try:
@@ -20,7 +24,11 @@ class BorgCollective:
             "spock": spock
             }
 
-
+    @property
+    def attrs(self):
+        "Shorcut to access the dataset attributes"
+        return self.ds.attrs
+    
     def read_tcf(self, filename: str):
         "Read .tcf files and stores them as global attributes"
         with open(filename, "r") as f:

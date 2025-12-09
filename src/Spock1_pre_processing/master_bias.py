@@ -22,7 +22,7 @@ plt.rcParams['image.origin'] = 'lower'
 #  PLOTTING HELPERS
 # ---------------------------------------------------------------------------
 
-def plot_bias_frame(data, title=None, save_as=None, verbose=False, savefig=False):
+def plot_bias_frame(data, title=None, save_as=None, showfig=False, savefig=False):
     """Plot the single bias frame or the multiple bias frames for one science file"""
     plt.figure(figsize=(10, 6))
 
@@ -60,16 +60,19 @@ def plot_bias_frame(data, title=None, save_as=None, verbose=False, savefig=False
 
     if savefig:
         plt.savefig(save_as, dpi=120)
-    if verbose:
+    if showfig:
         plt.show()
 
     plt.close()
 
 
-def plot_master_bias(master_bias, instrument, save_dir):
+def plot_master_bias(master_bias, project, instrument, savedir):
     """Plot the resulting master bias"""
+
+    plot_dir = savedir + '/output'
+
     plt.figure(figsize=(11, 7))
-    plt.suptitle(f"Master Bias – {instrument}", size=16)
+    plt.suptitle(f"Master Bias ; {project} ; {instrument}", size=16)
 
     if master_bias.ndim == 2:
         plt.imshow(
@@ -90,16 +93,16 @@ def plot_master_bias(master_bias, instrument, save_dir):
             plt.xlabel("X pixel")
             plt.ylabel("Y pixel")
 
-    Path(save_dir).mkdir(exist_ok=True)
-    plt.savefig(f"{save_dir}/master_bias_{instrument}.png", dpi=120)
-    plt.savefig(f"{save_dir}/master_bias_{instrument}.pdf")
+    Path(plot_dir).mkdir(exist_ok=True)
+    plt.savefig(f"{plot_dir}/master_bias.png", dpi=120)
+    plt.savefig(f"{plot_dir}/master_bias.pdf")
     plt.close()
 
 
-def create_bias_gif(instrument, save_dir):
+def create_bias_gif(savedir):
     """Create animated GIF from saved bias PNG frames"""
-    plot_dir = save_dir + '/plots'
-    pattern = f"{plot_dir}/{instrument}_*.png"
+    plot_dir = savedir + '/output'
+    pattern = f"{plot_dir}/*.png"
     png_files = sorted(glob.glob(pattern))
 
     if not png_files:
@@ -107,7 +110,7 @@ def create_bias_gif(instrument, save_dir):
         return
 
     frames = [Image.open(f) for f in png_files]
-    gif_name = f"{save_dir}/master_bias_{instrument}.gif"
+    gif_name = f"{plot_dir}/bias_frames.gif"
 
     frames[0].save(
         gif_name,
@@ -124,7 +127,7 @@ def create_bias_gif(instrument, save_dir):
 #  BIAS COMBINATION FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def combine_biases_1window(bias_files, instrument, instr_cfg, idx_list, save_dir, verbose=False, savefig=False, eyeball=False):
+def combine_biases_1window(bias_files, project, instrument, instr_cfg, idx_list, savedir, showfig=False, savefig=False, eyeball=False):
     """Calculate the combined biases for 1 window"""
     idx = idx_list[0]
     id_slice = slice(*instr_cfg.id_slice)
@@ -140,11 +143,11 @@ def combine_biases_1window(bias_files, instrument, instr_cfg, idx_list, save_dir
         mean, var = np.mean(data_frame), np.var(data_frame)
         print(f"File {n+1}/{len(bias_files)} ; {frame_id} ; mean={mean:.1f}, var={var:.1f}, var/mean={var/mean:.2f}")
 
-        if verbose or savefig:
-            plot_dir = save_dir + '/plots'
+        if showfig or savefig:
+            plot_dir = savedir + '/output'
             Path(plot_dir).mkdir(exist_ok=True)
-            png_name = f"{plot_dir}/{instrument}_{n+1:03d}.png"
-            plot_bias_frame(data_frame, title=f"{frame_id}", save_as=png_name, verbose=verbose, savefig=savefig)
+            png_name = f"{plot_dir}/bias_frame_{n+1:03d}.png"
+            plot_bias_frame(data_frame, title=f"Frame{n+1:03d} ; {frame_id} ; {project} ; {instrument}", save_as=png_name, showfig=showfig, savefig=savefig)
 
         if eyeball:
             ans = input("good/bad? [g/b]: ").lower()
@@ -153,8 +156,8 @@ def combine_biases_1window(bias_files, instrument, instr_cfg, idx_list, save_dir
         bias_data.append(data_frame)
 
     if eyeball:   # plot each frame and have user select what is good and bad.  NEEDS IMPLEMENTING FOR 2 WINDOWS.
-        good_path = Path(save_dir) / "bias_good.txt"
-        bad_path  = Path(save_dir) / "bias_bad.txt"
+        good_path = Path(savedir) / "bias_good_frames.txt"
+        bad_path  = Path(savedir) / "bias_bad_frames.txt"
 
         np.savetxt(good_path, good_frames, fmt="%s")
         np.savetxt(bad_path,  bad_frames,  fmt="%s")
@@ -163,7 +166,7 @@ def combine_biases_1window(bias_files, instrument, instr_cfg, idx_list, save_dir
     return np.median(np.array(bias_data), axis=0)
 
 
-def combine_biases_2windows(bias_files, instrument, instr_cfg, idx_list, save_dir, verbose=False, savefig=False): 
+def combine_biases_2windows(bias_files, project, instrument, instr_cfg, idx_list, savedir, showfig=False, savefig=False): 
     """Calculate the combined biases for 2 windows seperately"""
     id_slice = slice(*instr_cfg.id_slice)
 
@@ -183,11 +186,11 @@ def combine_biases_2windows(bias_files, instrument, instr_cfg, idx_list, save_di
                 mean, var = np.mean(data_frame), np.var(data_frame)
                 print(f"File {n+1}/{len(bias_files)} ; window {idx} ; {frame_id} ; mean={mean:.1f}, var={var:.1f}, var/mean={var/mean:.2f}")
 
-            if verbose or savefig:
-                plot_dir = save_dir + '/plots'
+            if showfig or savefig:
+                plot_dir = savedir + '/output'
                 Path(plot_dir).mkdir(exist_ok=True)
-                png_name = f"{plot_dir}/{instrument}_{n+1:03d}.png"
-                plot_bias_frame(window_frames, title=f"{frame_id}", save_as=png_name, verbose=verbose, savefig=savefig)
+                png_name = f"{plot_dir}/bias_frame_{n+1:03d}.png"
+                plot_bias_frame(window_frames, title=f"Frame{n+1:03d} ; {frame_id} ; {project} ; {instrument}", save_as=png_name, showfig=showfig, savefig=savefig)
 
     return np.array([np.median(bias_data[i], axis=0) for i in range(len(idx_list))])
 
@@ -198,18 +201,21 @@ def combine_biases_2windows(bias_files, instrument, instr_cfg, idx_list, save_di
 
 def create_master_bias(meta, instr_cfg):
     """Main function to create a master bias"""
-    attr = getattr(meta, "ds", meta).attrs
 
-    biaslist = attr["bias_list"]
-    instrument = attr["instrument"]
-    save_dir = attr["outputdir_Spock1"]
-    save_dir = './' + save_dir + '/bias'
-    verbose = get_bool_attr(attr["bias_verbose"])
-    savefig = get_bool_attr(attr["bias_savefig"])
-    savefits = get_bool_attr(attr["bias_clobber"])
-    eyeball = get_bool_attr(attr["bias_eyeball"])
+    biaslist = meta.attrs["bias_list"]
+    instrument = meta.attrs["instrument"]
+    project = meta.attrs["project_name"]
+    savedir = meta.attrs["outputdir_Spock1"]
+    savedir = './' + savedir + '/bias'
+    showfig = get_bool_attr(meta.attrs["bias_showfig"])
+    savefig = get_bool_attr(meta.attrs["bias_savefig"])
+    savefits = get_bool_attr(meta.attrs["bias_savefits"])
+    eyeball = get_bool_attr(meta.attrs["bias_eyeball"])
 
-    Path(save_dir).mkdir(exist_ok=True)
+    if instrument != 'EFOSC2' and instrument != 'ACAM':
+        raise ValueError('Currently only set up / tested to deal with ACAM or EFOSC data')
+
+    Path(savedir).mkdir(exist_ok=True)
     
     bias_files = np.loadtxt(biaslist, str)
     
@@ -220,27 +226,27 @@ def create_master_bias(meta, instr_cfg):
     # Combine frames
     if nwin == 1:
         master_bias = combine_biases_1window(
-            bias_files, instrument, instr_cfg, idx_list, save_dir, verbose, savefig, eyeball
+            bias_files, project, instrument, instr_cfg, idx_list, savedir, showfig, savefig, eyeball
         )
     else:
         master_bias = combine_biases_2windows(
-            bias_files, instrument, instr_cfg, idx_list, save_dir, verbose, savefig
+            bias_files, project, instrument, instr_cfg, idx_list, savedir, showfig, savefig
         )
 
     # Save FITS
     if savefits:
-        fits.PrimaryHDU(master_bias).writeto(f"{save_dir}/master_bias.fits", overwrite=True)
+        fits.PrimaryHDU(master_bias).writeto(f"{savedir}/master_bias.fits", overwrite=True)
 
     # Create GIF if requested
-    if verbose:
-        create_bias_gif(instrument, save_dir)
+    if showfig:
+        create_bias_gif(savedir)
 
     # Plot master bias
-    plot_master_bias(master_bias, instrument, save_dir)
+    plot_master_bias(master_bias, project, instrument, savedir)
 
     print("\nMaster bias generation complete.\n")
 
-    return master_bias
+    return
 
 
 # ---------------------------------------------------------------------------
@@ -252,12 +258,13 @@ if __name__ == "__main__":
 
     meta = xr.Dataset()
     meta.attrs['instrument'] = 'EFOSC2'
+    meta.attrs['project_name'] = 'Planet'
     meta.attrs['inputdir_Spock1'] = 'Spock0_calib_output'
     meta.attrs['outputdir_Spock1'] = 'Spock1_pre_processing'
 
     meta.attrs['bias_list'] = './Spock0_calib_output/BIAS_Free_27arcsec_list'
-    meta.attrs['bias_verbose'] = True
-    meta.attrs['bias_clobber'] = True
+    meta.attrs['bias_savefits'] = True
+    meta.attrs['bias_showfig'] = True
     meta.attrs['bias_savefig'] = True
     meta.attrs['bias_eyeball'] = False
 

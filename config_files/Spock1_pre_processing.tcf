@@ -2,24 +2,44 @@
 # Spock 1: Pre-Processing
 ############################################################################
 
-# Pipeline Stages
-skip_bias                     False
-skip_flats                    True
-skip_cosmics                  False
-skip_badpixelmask             True
+#############################
+### Pipeline Stages
 
-# Bias
-bias_list                     ./Spock0_calib_output/BIAS_Free_27arcsec_list
-bias_verbose                  True
-bias_clobber                  True
-bias_savefig                  True
-bias_eyeball                  False
+skip_bias                             False
+skip_flats_bad_pixel_mask             False
+skip_cosmics                          False
 
-# Flats
-flat_list:                    path/to/file
-# Under construction
 
-# 1/f correction
+#############################
+### Bias
+
+bias_list                             ./Spock0_calib_output/BIAS_Free_27arcsec_list
+bias_savefits                         True 
+bias_showfig                          True                       
+bias_savefig                          True
+bias_eyeball                          False
+
+
+#############################
+### Flats and Bad-Pixel-Mask
+
+flat_list                             ./Spock0_calib_output/FLAT_Gr11_27arcsec_list
+flat_savefits                         True
+flat_showfig                          True
+flat_savefig                          True
+flat_saturation_limit                 60000
+flat_box_width                        9
+
+bad_pixel_mask                        True
+bad_pixel_mask_savefits               True
+bad_pixel_mask_showfig                True
+bad_pixel_mask_savefig                True
+bad_pixel_mask_medianfilter_cutoff    5
+
+
+#############################
+### 1/f correction
+
 skip_1fcorrection             1
 # Under construction
 

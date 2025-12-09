@@ -6,6 +6,7 @@
 ########################################################################
 
 import os
+import glob
 import pickle
 import argparse
 
@@ -17,30 +18,17 @@ from astropy.io import fits
 from datetime import datetime, timezone
 from scipy.ndimage import median_filter, gaussian_filter
 from scipy.stats import median_abs_deviation as mad
+from global_utils.utils import get_bool_attr
+from global_utils.instrument_utils import get_fits_image_extensions_from_config
 
 # Prevent matplotlib plotting frames upside down
 plt.rcParams['image.origin'] = 'lower'
 
 # ---------------------------------------------------------------------------
-#  INSTRUMENT CONFIGURATION
-# ---------------------------------------------------------------------------
-
-INSTRUMENTS = {
-    "ACAM": {
-        "window_indices": [1],     # ACAM bias stored in FITS extension 1
-        "id_slice": slice(-12, -4)
-    },
-    "EFOSC2": {
-        "window_indices": [0],     # EFOSC uses extension 0
-        "id_slice": slice(-18, -5)
-    }
-}
-
-# ---------------------------------------------------------------------------
 # FLAT PLOTTING FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def plot_flat_frame(f, nwin, verbose=False, flat_output=os.getcwd()):
+def plot_flat_frame(f, nwin, project, instrument, verbose=False, savefig=False, flat_output=os.getcwd()):
 
     # Plot master flat
     plt.figure()
@@ -62,9 +50,11 @@ def plot_flat_frame(f, nwin, verbose=False, flat_output=os.getcwd()):
         vmin,vmax = np.nanpercentile(f[1],[10,90])
         plt.imshow(f[1],vmin=vmin,vmax=vmax,cmap='hot')
 
-    plt.suptitle('Master flat before response fitting')
+    plt.suptitle(f'Master flat before response fitting ; {project} ; {instrument}')
     plt.colorbar()
-    plt.savefig(flat_output + '/master_flat_before_response_fitting.png')
+    
+    if savefig:
+        plt.savefig(flat_output + f'/master_flat_before_response_fitting.png')
 
     if verbose:
         plt.show()
@@ -89,14 +79,19 @@ def save_fits(data, filename, overwrite=False):
 
 # -----------------------------------
 
-def save_to_xarray(bad_pixels, bad_pixel_dir, name, method, cut_off=None):
+def save_to_xarray(bad_pixels, bad_pixel_dir, name, method, meta=None, cut_off=None):
 
     # Make a xarray
     bad_pixels_da = xr.DataArray(bad_pixels, name=name)
-        
-    # Add attributes (metadata)
+
+    # Add the attributes from the meta file
+    if meta is not None:
+        for key, value in meta.attrs.items():
+            bad_pixels_da.attrs[key] = value
+
+    # Add new attributes
     bad_pixels_da.attrs['method'] = method
-    bad_pixels_da.attrs['date'] = datetime.now(timezone.utc).isoformat()
+    bad_pixels_da.attrs['created'] = datetime.now(timezone.utc).isoformat()
 
     if cut_off != None:
         bad_pixels_da.attrs['median_cut_off'] = cut_off
@@ -105,38 +100,42 @@ def save_to_xarray(bad_pixels, bad_pixel_dir, name, method, cut_off=None):
     # Output as h5 
     bad_pixels_da.to_netcdf(bad_pixel_dir + f"/{name}.h5", engine="h5netcdf")
 
+
 # ---------------------------------------------------------------------------
 # FLAT COMBINATION FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def combine_flats_1window(flats_list, master_bias, instrument, sat_limit, 
-                          verbose=False, flat_output=os.getcwd()):
+def combine_flats_1window(flats_list, master_bias, project, instrument, instr_cfg, idx_list, sat_limit, 
+                          verbose=False, savefig=False, flat_output=os.getcwd()):
 
+    idx = idx_list[0]
+    id_slice = slice(*instr_cfg.id_slice)
     flat_data = []
 
     plt.figure()
 
     for n_frame, f in enumerate(flats_list):
 
-        i = fits.open(f)
+        with fits.open(f) as hdul:
+            data_frame = hdul[idx].data
 
-        if instrument == 'ACAM':
-            data_frame = i[1].data
-        if instrument == 'EFOSC2':
-            data_frame = i[0].data
+        frame_id = f[id_slice]
 
-        print('File = ',f,'; Mean = ',np.mean(data_frame),'; Shape = ',np.shape(data_frame), 'Max count = ',np.max(data_frame[:,20:-20])) # Need to clip extreme edges which can have very high counts
+        print(f'File {n_frame+1}/{len(flats_list)} ; {frame_id} ; mean={np.mean(data_frame)} ; shape={np.shape(data_frame)} ; max count={np.max(data_frame[:,20:-20])}') # Need to clip extreme edges which can have very high counts
         if np.max(data_frame[:,20:-20]) <= sat_limit:
             flat_data.append(data_frame - master_bias)
         else:
-            print('--- ingoring potentially saturated frame')
+            print(f'--- ingoring potentially saturated frame {frame_id}')
 
         vmin, vmax = np.nanpercentile(data_frame,[10,90])
         plt.imshow(data_frame, vmin=vmin, vmax=vmax, cmap='hot')
         plt.xlabel("X pixel")
         plt.ylabel("Y pixel")
         plt.colorbar()
-        plt.savefig(flat_output + f'/flat_image_frame_{n_frame:d}.png')
+        plt.title(f'Frame{n_frame+1:03d} ; {frame_id} ; {project} ; {instrument}')
+
+        if savefig:
+            plt.savefig(flat_output + f'/flat_frame_{n_frame+1:03d}.png')
 
         if verbose:
         
@@ -145,7 +144,7 @@ def combine_flats_1window(flats_list, master_bias, instrument, sat_limit,
 
         plt.clf()
 
-        i.close()
+        hdul.close()
 
     flat_data = np.array(flat_data)
 
@@ -154,52 +153,51 @@ def combine_flats_1window(flats_list, master_bias, instrument, sat_limit,
 
 # -----------------------------------
 
-def combine_flats_2windows(flats_list, master_bias, sat_limit, 
-                           verbose=False, flat_output=os.getcwd()):
+def combine_flats_2windows(flats_list, master_bias, project, instrument, instr_cfg, idx_list, sat_limit, 
+                           verbose=False, savefig=False, flat_output=os.getcwd()):
 
+    id_slice = slice(*instr_cfg.id_slice)
     flat_data = [[],[]]
 
     plt.figure()
 
     for n_frame, f in enumerate(flats_list):
 
-        i = fits.open(f)
+        hdul = fits.open(f)
+        frame_id = f[id_slice]
 
-        for level in range(1,len(i)):
+        for w, idx in enumerate(idx_list):
 
-            data_frame = i[level].data
+            data_frame = hdul[idx].data
 
-            flat_data[level-1].append(data_frame-master_bias[level-1])
-
-            # plt.subplot(1,2,level)
-            # plt.imshow(data_frame)
-            # plt.colorbar()
-
-            print('File = %s ; Mean (window %d) = %f ; Shape (window %d) = %s ; Max count = %d '%(f,level,np.mean(data_frame),level,np.shape(data_frame),np.max(data_frame[:,20:-20])))
+            print(f'File {n_frame+1}/{len(flats_list)} ; {frame_id} ; window {w} ; mean={np.mean(data_frame)} ; shape={np.shape(data_frame)} ; max_count={np.max(data_frame[:,20:-20])}')
+            
             if np.max(data_frame[:,20:-20]) <= sat_limit:
-                flat_data[level-1].append(data_frame-master_bias[level-1])
+                flat_data[w].append(data_frame-master_bias[w])
             else:
                 print('--- ingoring potentially saturated frame')
             
-            plt.subplot(1,2,level)
+            plt.subplot(1,2, w+1)
 
             vmin,vmax = np.nanpercentile(data_frame,[10,90])
             plt.imshow(data_frame, vmin=vmin, vmax=vmax, cmap='hot')
-            if level == 1:
+            if w == 0:
                 plt.xlabel("X pixel")
                 plt.ylabel("Y pixel")
             else:
                 plt.yticks(visible=False)
 
         plt.colorbar()
-        plt.savefig(flat_output + f'flat_image_frame_{n_frame:d}.png')
+        plt.suptitle(f'Frame{n_frame+1:03d} ; {frame_id} ; {project} ; {instrument}')
+        if savefig:
+            plt.savefig(flat_output + f'/flat_frame_{n_frame+1:03d}.png')
         
         if verbose:
             plt.show(block=False)
             plt.pause(0.5)
             plt.clf()
 
-        i.close()
+        hdul.close()
 
     flat_data = np.array(flat_data)
 
@@ -209,7 +207,7 @@ def combine_flats_2windows(flats_list, master_bias, sat_limit,
 
 # -----------------------------------
 
-def test_smoothing_widths(flat_data, nwindows, verbose=False, flat_output=os.getcwd()):
+def test_smoothing_widths(flat_data, nwindows, project, instrument, showfig=False, savefig=False, flat_output=os.getcwd()):
 
     """Run a series of median filters with differing box widths to find optimal width."""
 
@@ -254,15 +252,18 @@ def test_smoothing_widths(flat_data, nwindows, verbose=False, flat_output=os.get
         plt.plot(np.arange(1,nrows//10,2),std2,'ro',label='Window 2')
         plt.legend(loc='upper left')
     
-    plt.savefig(flat_output + '/bin_width_vs_std.png')
+    plt.title(f'bin width vs std ; {project} ; {instrument}')
+    if savefig:
+        plt.savefig(flat_output + f'/bin_width_vs_std.png')
 
-    if verbose:
+    if showfig:
         plt.show()
 
 # -----------------------------------
 
-def median_smooth(flat_data, name, nwindows, box_width, 
-                  overwrite=False, verbose=False,
+def median_smooth(flat_data, nwindows, box_width, 
+                  project, instrument,
+                  savefits=False, showfig=False, savefig=False,
                   flat_path=os.getcwd(), flat_output=os.getcwd()):
 
     """Smooth the flat using a running median, and evaluated at each column individually"""
@@ -306,11 +307,12 @@ def median_smooth(flat_data, name, nwindows, box_width,
     plt.ylabel('Residuals')
     plt.ylim(0.951,1.049)
     plt.subplots_adjust(hspace=0)
-    plt.suptitle('Median filter, column by column')
+    plt.suptitle(f'Median filter, column by column ; {project} ; {instrument}')
 
-    plt.savefig(flat_output + '/flat_image_vs_median_filter.png')
+    if savefig:
+        plt.savefig(flat_output + f'/flat_image_vs_median_filter.png')
 
-    if verbose:
+    if showfig:
         plt.show(block=False)
         plt.pause(5)
 
@@ -347,29 +349,30 @@ def median_smooth(flat_data, name, nwindows, box_width,
         plt.subplot(122)
         plt.imshow(normalised_sky_flat[1],vmin=0.95,vmax=1.05)
 
-    plt.suptitle('Median filter, column by column')
+    plt.suptitle(f'Median filter, column by column ; {project} ; {instrument}')
     plt.xlabel('X pixel')
     plt.ylabel('Y pixel')
     plt.colorbar()
+    
+    if savefig:
+        plt.savefig(flat_output + f'/median_filter_column_by_column.png')
 
-    plt.savefig(flat_output + '/median_filter_column_by_column.png')
-
-    if verbose:
+    if showfig:
         plt.show(block=False)
         plt.pause(5)
 
     plt.close()
 
-    hdu = fits.PrimaryHDU(normalised_sky_flat)
-
-    hdu.writeto(os.path.join(flat_path, f'master_flat_{name}_median_filter_column_by_column_box_width_{box_width:d}_FITTED.fits'), 
-                overwrite=overwrite)
+    if savefits:
+        hdu = fits.PrimaryHDU(normalised_sky_flat)
+        hdu.writeto(os.path.join(flat_path, f'master_flat_median_filter_column_by_column_box_width_{box_width:d}_FITTED.fits'), 
+                overwrite=savefits)
 
 # -----------------------------------
 
-def gaussian_smooth(flat_data, name, nwindows, instrument, 
-                    overwrite=False, verbose=False, 
-                    flat_output=os.getcwd()):
+def gaussian_smooth(flat_data, nwindows, project, instrument, 
+                    savefits=False, showfig=False, savefig=False, 
+                    flat_path=os.getcwd(), flat_output=os.getcwd()):
 
     """Smooth the flat using a Gaussian filter"""
 
@@ -418,11 +421,12 @@ def gaussian_smooth(flat_data, name, nwindows, instrument,
     plt.ylabel('Residuals')
     plt.ylim(0.951,1.049)
     plt.subplots_adjust(hspace=0)
-    plt.suptitle('Gaussian filter, example column')
+    plt.suptitle(f'Gaussian filter, example column ; {project} ; {instrument}')
 
-    plt.savefig(flat_output + 'gaussian_filter_example_column.png')
+    if savefig:
+        plt.savefig(flat_output + f'/gaussian_filter_example_column.png')
 
-    if verbose:
+    if showfig:
         plt.show(block=False)
         plt.pause(5)
 
@@ -452,7 +456,7 @@ def gaussian_smooth(flat_data, name, nwindows, instrument,
         plt.subplot(122)
         plt.imshow(normalised_sky_flat[1],vmin=0.95,vmax=1.05)
 
-    plt.suptitle('Gaussian filter')
+    plt.suptitle(f'Gaussian filter ; {project} ; {instrument}')
     plt.xlabel('X pixel')
     plt.ylabel('Y pixel')
     plt.colorbar()
@@ -461,16 +465,16 @@ def gaussian_smooth(flat_data, name, nwindows, instrument,
     plt.pause(5)
     plt.close()
 
-    hdu = fits.PrimaryHDU(normalised_sky_flat)
-    hdu.writeto('master_flat_'+name+'_Gaussian_filter_FITTED.fits', 
-                overwrite=overwrite)
+    if savefits:
+        hdu = fits.PrimaryHDU(normalised_sky_flat)
+        hdu.writeto(os.path.join(flat_path, f'master_flat_Gaussian_filter_FITTED.fits'), overwrite=savefits)
 
 # ---------------------------------------------------------------------------
 # BAD PIXEL MASKING FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def pixel_mask_tight(frame, save, verbose=False, 
-                     bad_pixel_dir=os.getcwd(), 
+def pixel_mask_tight(frame, project, instrument, 
+                     mask_showfig=False, mask_savefig=False,
                      bad_output=os.getcwd()):
     """A tighter definition of a bad pixel mask using 5 median absolute devitations from the median, 
     computed column by column (along dispersion direction)"""
@@ -488,31 +492,23 @@ def pixel_mask_tight(frame, save, verbose=False,
     percentage_bad_pixels = 100*len(np.where(bad_pixels)[0])/(frame.shape[0]*frame.shape[1])
     print("Percentage of pixels deemed bad by medians and mads = %.2f%%"%percentage_bad_pixels)
 
-    if save:
-
+    if mask_savefig or mask_showfig:
         plt.figure()
         plt.imshow(bad_pixels)
-        plt.title("Bad pixel mask using medians and MADS")
-        plt.savefig(bad_output + '/bad_pixel_mask_medians_MADS.png')
+        plt.title(f"Bad pixel mask using medians and MADS ; {project} ; {instrument}")
 
-        if verbose:
+        if mask_savefig:
+            plt.savefig(bad_output + '/bad_pixel_mask_medians_MADS.png')
+
+        if mask_showfig:
             plt.show()
-        
-        # Output as xarray
-        save_to_xarray(bad_pixels,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_tight',
-                       method='tighter definition using 5 std from median')
-        
-        # pickle.dump(bad_pixels, open(os.path.join(bad_pixel_dir, "bad_pixel_mask_tight.pickle"),"wb"))
-        return
 
     return bad_pixels
 
 # -----------------------------------
 
-def pixel_mask_loose(frame, save, verbose=False, 
-                     bad_pixel_dir=os.getcwd(),
+def pixel_mask_loose(frame, project, instrument,
+                     mask_showfig=False, mask_savefig=False,
                      bad_output=os.getcwd()):
     """A looser definition of the bad pixel mask using 5 standard deviations from the global mean"""
 
@@ -522,28 +518,24 @@ def pixel_mask_loose(frame, save, verbose=False,
     percentage_bad_pixels = 100*len(np.where(bad_pixels)[0])/(frame.shape[0]*frame.shape[1])
     print("Percentage of pixels deemed bad by means and stds = %.2f%%"%percentage_bad_pixels)
 
-    if save:
+    if mask_savefig or mask_showfig:
 
         plt.figure()
         plt.imshow(bad_pixels)
-        plt.title("Bad pixel mask using means and stds")
-        plt.savefig(bad_output + '/bad_pixel_mask_means_stds.png')
+        plt.title(f"Bad pixel mask using means and stds ; {project} ; {instrument}")
 
-        if verbose:
+        if mask_savefig:
+            plt.savefig(bad_output + '/bad_pixel_mask_means_stds.png')
+
+        if mask_showfig:
             plt.show()
-        
-        # Output as xarray
-        save_to_xarray(bad_pixels,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_loose',
-                       method='looser def, 5 std from the global mean')
 
     return bad_pixels
 
 # -----------------------------------
 
-def pixel_mask_medfilt(frame, save, cut_off=5, verbose=False,
-                       bad_pixel_dir=os.getcwd(),
+def pixel_mask_medfilt(frame, project, instrument, 
+                       mask_showfig=False, mask_savefig=False, mask_cutoff=5,
                        bad_output=os.getcwd()):
     """A function that uses median filters along the rows/cross-dispersion direction to locate outliers. 
     Can be more effective."""
@@ -551,7 +543,7 @@ def pixel_mask_medfilt(frame, save, cut_off=5, verbose=False,
     good_pixels = []
 
     for i,row in enumerate(frame):
-        MF = median_filter(row, cut_off)
+        MF = median_filter(row, mask_cutoff)
         residuals = row-MF
         good_pixels.append(((residuals >= -10*mad(residuals,scale='normal')) & (residuals <= 10*mad(residuals,scale='normal'))))
 
@@ -561,104 +553,114 @@ def pixel_mask_medfilt(frame, save, cut_off=5, verbose=False,
     percentage_bad_pixels = 100*len(np.where(bad_pixels)[0])/(frame.shape[0]*frame.shape[1])
     print("Percentage of pixels deemed bad by median filter = %.2f%%"%percentage_bad_pixels)
 
-    if save:
+    if mask_savefig or mask_showfig:
 
         plt.figure()
         plt.imshow(bad_pixels)
-        plt.title("Bad pixel mask using median filter")
+        plt.title(f"Bad pixel mask using median filter ; {project} ; {instrument}")
         plt.xlabel('X pixel')
         plt.ylabel('Y pixel')
-        plt.savefig(bad_output + '/bad_pixel_mask_median_filter.png')
 
-        if verbose:
+        if mask_savefig:
+            plt.savefig(bad_output + '/bad_pixel_mask_median_filter.png')
+
+        if mask_showfig:
             plt.show()
-
-        # Output as xarray
-        save_to_xarray(bad_pixels,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_medfilt',
-                       method='median filter',
-                       cut_off=5)
-
-        # pickle.dump(bad_pixels, open(os.path.join(bad_pixel_dir, "bad_pixel_mask_medfilt.pickle"),"wb"))
-        return
 
     return bad_pixels
 
 # ---------------------------------------------------------------------------
-# MAIN CALLABLE FUNCTION
+# MAIN CALLABLE FUNCTIONS
 # ---------------------------------------------------------------------------
 
-def create_pixel_mask(f, nwin, maskcutoff, verbose, bad_pixel_dir, bad_output):
+def create_pixel_mask(f, meta, nwin, project, instrument,  mask_savefits, mask_showfig, mask_savefig, mask_cutoff, bad_pixel_dir, bad_output):
 
+    print('\n')
+    print('Testing different pixel masks.')
     # Make bad pixel masks
     if nwin == 1:
-        pixel_mask_tight(f, True, verbose, bad_pixel_dir, bad_output)
-        pixel_mask_loose(f, True, verbose, bad_pixel_dir, bad_output)
-        pixel_mask_medfilt(f, True, maskcutoff, verbose, bad_pixel_dir, bad_output)
+        pmt = pixel_mask_tight(f, project, instrument, mask_showfig, mask_savefig, bad_output)
+        pml = pixel_mask_loose(f, project, instrument, mask_showfig, mask_savefig, bad_output)
+        pmmf = pixel_mask_medfilt(f, project, instrument, mask_showfig, mask_savefig, mask_cutoff, bad_output)
     else:
-        pmt = np.array([pixel_mask_tight(f[0],False),
-                        pixel_mask_tight(f[1],False)])
+        pmt = np.array([pixel_mask_tight(f[0], project, instrument, mask_showfig, mask_savefig),
+                        pixel_mask_tight(f[1], project, instrument, mask_showfig, mask_savefig)])
+
+        pml = np.array([pixel_mask_loose(f[0], project, instrument, mask_showfig, mask_savefig),
+                        pixel_mask_loose(f[1], project, instrument, mask_showfig, mask_savefig)])
+
+        pmmf = np.array([pixel_mask_medfilt(f[0], project, instrument, mask_showfig, mask_savefig, mask_cutoff),
+                         pixel_mask_medfilt(f[1], project, instrument, mask_showfig, mask_savefig, mask_cutoff)])
+
+    if mask_savefits:
         #pickle.dump(pmt,open("bad_pixel_mask_tight.pickle","wb"))
         save_to_xarray(pmt,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_tight',
-                       method='tighter definition using 5 std from median')
-
-        pml = np.array([pixel_mask_loose(f[0],False),
-                        pixel_mask_loose(f[1],False)])
+                    bad_pixel_dir,
+                    name='bad_pixel_mask_tight',
+                    method='tighter definition using 5 std from median',
+                    meta=meta)
+            
         #pickle.dump(pml,open("bad_pixel_mask_loose.pickle","wb"))
         save_to_xarray(pml,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_loose',
-                       method='looser def, 5 std from the global mean')
-
-        pmmf = np.array([pixel_mask_medfilt(f[0],False, maskcutoff),
-                         pixel_mask_medfilt(f[1],False, maskcutoff)])
+                    bad_pixel_dir,
+                    name='bad_pixel_mask_loose',
+                    method='looser def, 5 std from the global mean',
+                    meta=meta)
+            
         #pickle.dump(pmmf,open("bad_pixel_mask_medfilt.pickle","wb"))
         save_to_xarray(pmmf,
-                       bad_pixel_dir,
-                       name='bad_pixel_mask_medfilt',
-                       method='median filter',
-                       cut_off=5)
+                    bad_pixel_dir,
+                    name=f'bad_pixel_mask_medfilt_{mask_cutoff}',
+                    method='median filter',
+                    meta=meta,
+                    cut_off=mask_cutoff)
 
 # -----------------------------------
 
 def create_master_flat_pixel_mask(meta, instr_cfg):
 
     # Read meta database
-    flatlist = meta.attrs["flat_list"]
+
     instrument = meta.attrs["instrument"]
-    save_dir = meta.attrs["outputdir_Spock1"]
-    verbose = meta.attrs["flat_verbose"]
-    satlimit = meta.attrs["flat_saturation_limit"]
-    overwrite = meta.attrs["flat_overwrite_fits"]
-    flatsave = meta.attrs["flat_save"]
-    boxwidth = meta.attrs["flat_box_width"]
-    mask = meta.attrs["mask_output"]
-    maskcutoff = meta.attrs["mask_median_cut_off"]
+    project = meta.attrs["project_name"]
+    savedir = meta.attrs["outputdir_Spock1"]
+    
+    flatlist = meta.attrs["flat_list"]
+    savefits = get_bool_attr(meta.attrs["flat_savefits"])
+    showfig = get_bool_attr(meta.attrs["flat_showfig"])
+    savefig = get_bool_attr(meta.attrs["flat_savefig"])
+    satlimit = float(meta.attrs["flat_saturation_limit"])
+    boxwidth = int(meta.attrs["flat_box_width"])
+
+    mask = get_bool_attr(meta.attrs["bad_pixel_mask"])
+    mask_savefits = get_bool_attr(meta.attrs["bad_pixel_mask_savefits"])
+    mask_savefig = get_bool_attr(meta.attrs["bad_pixel_mask_savefig"])
+    mask_showfig = get_bool_attr(meta.attrs["bad_pixel_mask_showfig"])
+    mask_medianfilter_cutoff = int(meta.attrs["bad_pixel_mask_medianfilter_cutoff"])
+
 
     # Define directory for master flat and bad pixel mask
-    flat_dir = os.path.join(save_dir, 'flat')
-    flat_output = os.path.join(flat_dir, 'output')
-    bad_pixel_dir = os.path.join(save_dir, 'bad_pixel_mask')
-    bad_output = os.path.join(bad_pixel_dir, 'output')
+    flat_dir = os.path.join(savedir, 'flat', os.path.basename(flatlist))
+    flat_output = os.path.join(flat_dir, 'plots')
+    bad_pixel_dir = os.path.join(savedir, 'bad_pixel_mask', os.path.basename(flatlist))
+    bad_output = os.path.join(bad_pixel_dir, 'plots')
 
     # Make the directory
     os.makedirs(flat_dir, exist_ok=True)
     os.makedirs(flat_output, exist_ok=True)
-    os.makedirs(bad_pixel_dir, exist_ok=True)
-    os.makedirs(bad_output, exist_ok=True)
+    if mask:
+        os.makedirs(bad_pixel_dir, exist_ok=True)
+        os.makedirs(bad_output, exist_ok=True)
 
     # Check instrument 
     if instrument != 'EFOSC2' and instrument != 'ACAM':
-        raise ValueError('Currently only set up to deal with ACAM or EFOSC data')
+        raise ValueError('Currently only set up / tested to deal with ACAM or EFOSC data')
     
     # Load flat list
     flats_files = np.loadtxt(flatlist, str)
 
     # Find master bias
-    bias_path = os.path.join(save_dir, 'bias', 'master_bias.fits')
+    bias_path = glob.glob(os.path.join(savedir, 'bias', 'master_bias.fits'))[0]
 
     # If bias is not there, raise error
     if not os.path.isfile(bias_path):
@@ -668,68 +670,71 @@ def create_master_flat_pixel_mask(meta, instr_cfg):
     master_bias_data = fits.open(bias_path)[0].data
 
     # Find out how many windows we're dealing with
-    if instrument == 'EFOSC2':
-        nwin = 1
-    elif instrument == 'ACAM':
-        test = fits.open(flats_files[0])
-        nwin = len(test) - 1
-    else:
-        raise ValueError('Currently only set up to deal with ACAM or EFOSC data')
+    test_file = flats_files[0]
+    idx_list = get_fits_image_extensions_from_config(instr_cfg, test_file)
+    nwin = len(idx_list)
     
     # Create master flat for different windows
     if nwin == 1:
-        f = combine_flats_1window(flats_files, master_bias_data, instrument, 
-                                  satlimit, verbose, flat_output)
+        f = combine_flats_1window(flats_files, master_bias_data, project, instrument, instr_cfg, idx_list, 
+                                  satlimit, showfig, savefig, flat_output)
     else:
-        f = combine_flats_2windows(flats_files, master_bias_data, 
-                                   satlimit, verbose, flat_output)
+        f = combine_flats_2windows(flats_files, master_bias_data, project, instrument, instr_cfg, idx_list, 
+                                   satlimit, showfig, savefig, flat_output)
+
+
+    # Plot Master Flat before Response Fitting
+    if showfig or savefig:
+        plot_flat_frame(f, nwin, project, instrument, showfig, savefig, flat_output)
 
     # Save flats
-    if flatsave:
-        save_fits(f/np.median(f), os.path.join(flat_dir, 'master_flat_testing.fits'), overwrite)
+    if savefits:
+        save_fits(f/np.median(f), os.path.join(flat_dir, f'master_flat_{project}_{instrument}.fits'), overwrite=savefits)
 
     # Smoothing width
-    test_smoothing_widths(np.array(f), nwin, verbose, flat_output)
+    test_smoothing_widths(np.array(f), nwin, project, instrument, showfig, savefig, flat_output)
 
     # Median smooth
-    median_smooth(np.array(f), 'testing', nwin, boxwidth, overwrite, 
-                  verbose, flat_dir, flat_output)
+    median_smooth(np.array(f), nwin, boxwidth, project, instrument, savefits, 
+                  showfig, savefig, flat_dir, flat_output)
+    
+    # Gaussing smooth
+    # ## Note: Gaussian smooth not currently used, despite good perfomance, as it removes features in x as well as y
+    gaussian_smooth(np.array(f), nwin, project, instrument, savefits,
+                    showfig, savefig, flat_dir, flat_output)
 
     # Create bad pixel mask
     if mask:
-        create_pixel_mask(f, nwin, maskcutoff, verbose, bad_pixel_dir, bad_output)
+        create_pixel_mask(f, meta, nwin, project, instrument,
+                           mask_savefits, mask_showfig, mask_savefig,
+                             mask_medianfilter_cutoff, bad_pixel_dir, bad_output)
+
+    return
 
 # ---------------------------------------------------------------------------
 # Optional: Testing the script
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__": ## Needs to be writting
+if __name__ == "__main__":
 
     meta = xr.Dataset()
     meta.attrs['instrument'] = 'EFOSC2'
+    meta.attrs['projet_name'] = 'Planet'
     meta.attrs['inputdir_Spock1'] = 'Spock0_calib_output'
     meta.attrs['outputdir_Spock1'] = 'Spock1_pre_processing'
     
     meta.attrs['flat_list'] = '/Users/cividante/Tiberius/hatp65/Spock0_calib_output/SKY_FLAT_Gr11_27arcsec_list'
-    meta.attrs['flat_verbose'] = False
+    meta.attrs['flat_savefits'] = True
+    meta.attrs['flat_showfig'] = True
+    meta.attrs['flat_savefig'] = True
     meta.attrs['flat_saturation_limit'] = 55000
-    meta.attrs['flat_overwrite_fits'] = True 
-    meta.attrs['flat_save'] = True
     meta.attrs['flat_box_width'] = 9
-    meta.attrs['mask_output'] = True
-    meta.attrs['mask_median_cut_off'] = 5
+
+    meta.attrs['bad_pixel_mask'] = True
+    meta.attrs['bad_pixel_mask_savefits'] = True
+    meta.attrs['bad_pixel_mask_showfig'] = True
+    meta.attrs['bad_pixel_mask_savefig'] = True
+    meta.attrs['bad_pixel_mask_medianfilter_cutoff'] = 5
+
 
     create_master_flat_pixel_mask(meta, None)
-
-# parser = argparse.ArgumentParser()
-# parser.add_argument('flatslist', help="""Enter list of flats file names, created through ls > flat.lis in the command line""")
-# parser.add_argument('-v','--verbose',help="""Display the image of each frame before combining it.""",action='store_true')
-# parser.add_argument('-b','--bias_frame',help="""Define the bias frame.""")
-# parser.add_argument('-inst','--instrument',help="""Define the instrument used, either EFOSC or ACAM""")
-# parser.add_argument('-c','--clobber',help="""Need this argument to save resulting fits file, default = False""",action='store_true')
-# parser.add_argument('-s','--saturation_limit',help="""Use this to exclude frames with counts above a satruation threshold. Default is 55000""",type=int,default=55000)
-# args = parser.parse_args()
-
-
-## Note: Gaussian smooth not currently used, despite good perfomance, as it removes features in x as well as y
-# gaussian_smooth(np.array(f),args.flatslist,nwin,args.instrument,args.clobber)

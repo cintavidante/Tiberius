@@ -3,11 +3,12 @@
 #################################################################################
 
 
-# Instrument used: Choose between "JWST_NIRSPEC", "JWST_NIRCAM", "JWST_NIRISS", "EFOSC2", "ACAM" and "KECK"
+# Instrument used: Choose between "JWST", "EFOSC2", "ACAM" and "KECK"
 instrument                 EFOSC2
 
 # Project Folder
 project_dir                "."
+project_name               WASP_96
 
 
 # Directories relative to project_directory
