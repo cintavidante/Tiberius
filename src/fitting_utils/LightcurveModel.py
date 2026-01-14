@@ -172,10 +172,22 @@ class LightcurveModel(object):
         return joint_params,separate_params
 
 
-    def update_model(self,theta,param_list_global):
+    def update_model_emcee(self,theta,param_list_global):
 
         for i in range(len(theta)):
             self.param_dict[param_list_global[i]].currVal = theta[i]
+
+        self.transit_model.update_model(self.param_dict)
+        self.systematic_model.update_model(self.param_dict)
+
+        if self.GP_used:
+            self.GP_model.update_model(self.param_dict)
+        return
+    
+    def update_model(self,theta):
+
+        for i in range(len(theta)):
+            self.param_dict[self.param_list_free[i]].currVal = theta[i]
 
         self.transit_model.update_model(self.param_dict)
         self.systematic_model.update_model(self.param_dict)
