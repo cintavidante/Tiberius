@@ -67,30 +67,31 @@ class JointFitter(object):
 
         
 
-    def map_theta(self,theta):
-        s
-
-    def joint_logprobability(self,theta):
+    def map_theta(self,global_theta,lc_idx,global_param_list):
 
         """
+        Assign global parameters to each light curve.
+
         Inputs:
-        theta         - global theta vector (joint_params, lc0_params, lc1_params, etc..)
-        
+        global_theta      - global parameter vector [joint_params, lc0_params, lc1_params, etc...]
+        lc_idx            - int, light curve index (in lightcurve_list)
+        global_param_list - list, parameter names e.g. [t0, c1_lc0, c1_lc1]
+
         Returns:
-        logprob_total - joint log probability (float)
+        lc_theta      - lightcurve-specific parameter vector for input to Sampling.loglikelihood_emcee()
 
         """
-        log_prob_sum = 0.0
+        lc = self.lightcurve_list[lc_idx]
 
-        for ilc,sampling_obj in enumerate(self.sampling_objects_list):
-            # Extract parameters for this lightcurve 
-            lc_theta = self.map_theta(theta)
-            # And compute logprob
-            log_prob = sampling_obj.logprobability_emcee(lc_theta)
+        lc_theta      = [] 
+        lc_param_list = []
 
-            if not np.isfinite(log_prob):
-                return -np.inf 
-            
-            log_prob_sum += log_prob
-        
-        return log_prob_sum
+        for i, param_name in enumerate(global_param_list):
+            # first the joint parameters 
+            if param_name in self.joint_param_names:
+                lc_theta.append(global_theta[i])
+                
+            elif f'_lc{lc_idx}' in param_name:
+                lc_theta.append(global_theta[i])
+            lc_param_list.append(param_name)
+        return lc_theta,lc_param_list
