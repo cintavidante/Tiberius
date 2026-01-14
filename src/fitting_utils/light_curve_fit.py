@@ -42,7 +42,7 @@ error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
 prior_file_list = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
 
 if len(flux_list)==len(error_list)==len(time_list)==len(wvl_bin_full_width_list)==nlc:
-    print(f"Fitting {nlc} light curves..")
+    print(f"Fitting {nlc} light curves jointly..")
 else:
     sys.exit("Multiple binning arrays provided without corresponding lightcurves. Check fitting_input.txt file.")
 
@@ -308,7 +308,7 @@ def construct_lightcurves(ilightcurve):
     prior_file = str(prior_file_list[ilightcurve])
 
     # initalise light curve model
-    lc_class = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs)
+    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs)
     param_dict = lc_class.return_parameter_dict()
     param_list_free = lc_class.return_free_parameter_list()
     nDims = len(param_list_free)
@@ -351,8 +351,7 @@ elif sampling_method == 'dynesty':
 # else:
 #     raise SystemExit
 
-
-sampling = s.Sampling(lc_class,sampling_arguments,sampling_method)
+sampling = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
 
 if sampling_method == 'emcee':
 

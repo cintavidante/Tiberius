@@ -107,7 +107,7 @@ class Sampling(object):
 
     # -------------------- EMCEE methods -------------------- #
     def logprior_emcee(self, theta):
-        """Compute log prior based on self.prior_dict."""
+        """Compute joint log prior based on global prior_dict."""
         lp = 0
         for i, pname in enumerate(self.param_list_free):
             prior_type = self.prior_dict[f'{pname}_prior']
@@ -122,43 +122,27 @@ class Sampling(object):
                     return -np.inf
         return lp
 
-    def loglikelihood_emcee(self, theta):
-        """Compute log likelihood using the lightcurve residuals and errors."""
-        if theta is not None:
-            self.lightcurve.update_model(theta)
-        residuals = self.lightcurve.calc_residuals()
-        flux_error = self.lightcurve.return_flux_err()
-        N = len(residuals)
-        logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(flux_error)) - np.sum(residuals**2 / (2*flux_error**2))
-        return logL
+    
+    def loglikelihood_emcee(self, theta, param_list):
+        """Compute joint log likelihood as summation of individual lightcurve log likelihoods."""
+        logL_total = 0.0
+        for ilc, lc in enumerate(self.lightcurve_list):
+            lc_theta,lc_param_list = map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+            if lc_theta is not None:
+                lc.update_model_emcee(lc_theta,lc_param_list)
+            residuals  = lc.calc_residuals()
+            flux_error = lc.return_flux_err()
+            N = len(residuals)
+            logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(flux_error)) - np.sum(residuals**2 / (2*flux_error**2))
+            logL_total += logL
+        return logL_total
 
-    def logprobability_emcee(self, theta):
+    def logprobability_emcee(self, theta, param_list):
         """Full log-probability for emcee: lnprior + lnlike."""
         lp = self.logprior_emcee(theta)
         if not np.isfinite(lp):
             return -np.inf
-        return lp + self.loglikelihood_emcee(theta)
-    
-
-    def joint_logprobability_emcee(self,theta):
-
-        """Summation of logprobabilities for jointly fit lightcurves."""
-       
-        log_prob_sum = 0.0
-
-        for ilc,sampling_obj in enumerate(self.sampling_objects_list):
-            # Extract parameters for this lightcurve 
-            lc_theta = self.map_theta(theta)
-            # And compute logprob
-            log_prob = sampling_obj.logprobability_emcee(lc_theta)
-
-            if not np.isfinite(log_prob):
-                return -np.inf 
-            
-            log_prob_sum += log_prob
-        
-        return log_prob_sum
-
+        return lp + self.loglikelihood_emcee(theta, param_list)
 
     def advance_chain(self,sampler,p0,nsteps,burn,save_chain,wavelength_bin):
         """The function that advances the emcee sampler chain with a progress bar
@@ -213,21 +197,17 @@ class Sampling(object):
 
         # Scatter walkers around starting parameters
         starting_values = np.array([self.param_dict[k].currVal for k in self.param_list_free])
+
         if burn:
             p0 = emcee.utils.sample_ball(starting_values, 1e-3*starting_values, size=nwalkers_total)
         else:
             p0 = [starting_values + 1e-8*np.random.randn(npars) for j in range(nwalkers_total)]
 
-        # intiate emcee sampler object
-        if self.nlightcurves > 1:
-            # joint fitting
-            prob_fn = jf.joint_logprobability
-        else:
-            prob_fn = self.logprobability_emcee
+         # intiate emcee sampler object
         if npars > 1:
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,prob_fn,threads=nthreads)
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,args=[self.param_list_free],threads=nthreads)
         else: # from my own tests I find that for a single parameter, the acceptance fraction is too high. Increasing the stretch scale factor decreases the acceptance fraction to a more acceptable value. This is relevant for ingress/egress fitting for ingress/egress with just Rp/Rs
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,prob_fn,threads=nthreads,moves=emcee.moves.StretchMove(10))
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,args=[self.param_list_free],threads=nthreads,moves=emcee.moves.StretchMove(10))
 
         # run chains
         print('################')
