@@ -175,7 +175,7 @@ class LightcurveModel(object):
     def update_model_emcee(self,theta,param_list_global):
 
         for i in range(len(theta)):
-            self.param_dict[param_list_global[i]].currVal = theta[i]
+            self.param_dict[param_list_global[i]].currVal = theta[i] # need param_list_global because the naming conventions are different
 
         self.transit_model.update_model(self.param_dict)
         self.systematic_model.update_model(self.param_dict)
