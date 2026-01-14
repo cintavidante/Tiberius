@@ -18,13 +18,13 @@ from fitting_utils import plotting_utils as pu
 from fitting_utils import priors
 
 class Sampling(object):
-    def __init__(self,lightcurve,sampling_arguments,sampling_method):
+    def __init__(self,lightcurve_list,sampling_arguments,sampling_method):
 
         """
 
 
         Inputs:
-        lightcurve         - light curve class which includes the full model (transit, systematics, etc.)
+        lightcurve_list    - list, light curve classes which includes the full model (transit, systematics, etc.)
         sampling_arguments - dict, parameters needed for dynesty / emcee; e.g. live points, precision criterion, nsteps, nwalkers
         sampling_method    - str, either dynesty, emcee, LM
 
@@ -35,15 +35,32 @@ class Sampling(object):
         - emcee result
         """
 
-        self.lightcurve = lightcurve
-        self.param_dict = self.lightcurve.param_dict
-        self.param_list_free = self.lightcurve.param_list_free
-        self.prior_dict = self.lightcurve.prior_dict
+        self.lightcurve_list = lightcurve_list
+        self.nlightcurves    = len(lightcurve_list)
         self.sampling_method = sampling_method
         self.sampling_arguments = sampling_arguments
 
-        if self.sampling_method == 'dynesty':
-            self.nDims = len( self.param_list_free)
+        if len(lightcurve_list)>1:
+            if sampling_method!='emcee':
+                raise NotImplementedError("Only written for emcee at the moment.")
+
+            joint_fitter = jf.JointFitter(lightcurve_list)
+
+            self.param_dict      = joint_fitter.param_dict_global
+            self.prior_dict      = joint_fitter.prior_dict_global
+            self.param_list_free = joint_fitter.param_list_global
+        
+        else:
+            self.lightcurve = lightcurve_list[0]
+            # Evie's original
+
+            self.param_dict      = self.lightcurve.param_dict
+            self.param_list_free = self.lightcurve.param_list_free
+            self.prior_dict      = self.lightcurve.prior_dict
+            
+
+            if self.sampling_method == 'dynesty':
+                self.nDims = len( self.param_list_free)
 
     # -------------------- Dynesty methods -------------------- #
     def prior_setup(self, x):
