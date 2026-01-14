@@ -16,6 +16,7 @@ from scipy import optimize,stats
 # from fitting_utils import parametric_fitting_functions as pf
 from fitting_utils import plotting_utils as pu
 from fitting_utils import priors
+from fitting_utils import joint_fitting as jf
 
 class Sampling(object):
     def __init__(self,lightcurve_list,sampling_arguments,sampling_method):
@@ -137,6 +138,26 @@ class Sampling(object):
         if not np.isfinite(lp):
             return -np.inf
         return lp + self.loglikelihood_emcee(theta)
+    
+
+    def joint_logprobability_emcee(self,theta):
+
+        """Summation of logprobabilities for jointly fit lightcurves."""
+       
+        log_prob_sum = 0.0
+
+        for ilc,sampling_obj in enumerate(self.sampling_objects_list):
+            # Extract parameters for this lightcurve 
+            lc_theta = self.map_theta(theta)
+            # And compute logprob
+            log_prob = sampling_obj.logprobability_emcee(lc_theta)
+
+            if not np.isfinite(log_prob):
+                return -np.inf 
+            
+            log_prob_sum += log_prob
+        
+        return log_prob_sum
 
 
     def advance_chain(self,sampler,p0,nsteps,burn,save_chain,wavelength_bin):
@@ -198,10 +219,15 @@ class Sampling(object):
             p0 = [starting_values + 1e-8*np.random.randn(npars) for j in range(nwalkers_total)]
 
         # intiate emcee sampler object
+        if self.nlightcurves > 1:
+            # joint fitting
+            prob_fn = jf.joint_logprobability
+        else:
+            prob_fn = self.logprobability_emcee
         if npars > 1:
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads)
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,prob_fn,threads=nthreads)
         else: # from my own tests I find that for a single parameter, the acceptance fraction is too high. Increasing the stretch scale factor decreases the acceptance fraction to a more acceptable value. This is relevant for ingress/egress fitting for ingress/egress with just Rp/Rs
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads,moves=emcee.moves.StretchMove(10))
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,prob_fn,threads=nthreads,moves=emcee.moves.StretchMove(10))
 
         # run chains
         print('################')
