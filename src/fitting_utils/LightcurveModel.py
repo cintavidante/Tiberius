@@ -47,7 +47,8 @@ class LightcurveModel(object):
         param_names = list(file['Name'])
         fixed = list(file['fitting'])
         self.param_dict = {}
-        self.param_list_free = []
+        self.param_list_free  = []
+        self.param_list_joint = []
         self.prior_dict = {}
         self.npars = 0
 
@@ -55,12 +56,26 @@ class LightcurveModel(object):
             if fixed[i] == 'free':
                 self.param_list_free.append(param_names[i])
                 self.param_dict[param_names[i]] = Param(currVals[i])
-                self.prior_dict[param_names[i]+'_1'] = file['prior_1'][i]
-                self.prior_dict[param_names[i]+'_2'] = file['prior_2'][i]
-                self.prior_dict[param_names[i]+'_prior'] = file['prior_type'][i]
+                self.param_dict[param_names[i]+'_1'] = file['prior_1'][i]
+                self.param_dict[param_names[i]+'_2'] = file['prior_2'][i]
+                self.param_dict[param_names[i]+'_prior'] = file['prior_type'][i]
                 self.npars += 1
             elif fixed[i] == 'fixed':
                 self.param_dict[param_names[i]] = float(currVals[i])
+            elif fixed[i] == 'joint':
+                # check the joint parameters are astrophysical
+                astro_param_names = ['per','rp','rp2','phi','t0','a','inc','w','ecc']
+                if param_names[i] not in astro_param_names:
+                    raise SystemError('Joint fitting designated for inappropriate parameters. Check priors txt file.')
+                else:
+                    print(f'{param_names[i]} will be jointly fit across all light curves.')
+                # add to the free parameters list
+                self.param_list_joint.append(param_names[i])
+                self.param_dict[param_names[i]] = Param(currVals[i])
+                self.prior_dict[param_names[i]+'_1'] = file['prior_1'][i]
+                self.prior_dict[param_names[i]+'_2'] = file['prior_2'][i]
+                self.prior_dict[param_names[i]+'_prior'] = file['prior_type'][i]
+                self.npars += 1 # number of free parameters for this light curve - will need to edit down the road in the joint fitting
             else:
                 print('something is wrong with your prior file')
     
@@ -112,6 +127,8 @@ class LightcurveModel(object):
 
     def return_free_parameter_list(self):
         return self.param_list_free
+    def return_joint_parameter_list(self):
+        return self.param_list_joint
     def return_parameter_dict(self):
         return self.param_dict
 
@@ -141,11 +158,24 @@ class LightcurveModel(object):
 
         return model_calc
 
+    def unpack_theta(self,theta):
+        joint_params    = {}
+        separate_params = [{} for _ in self.nlightcurves]
 
-    def update_model(self,theta):
+        idx = 0 # index through theta
+        for name in self.param_list_joint:
+            joint_params[name] = theta[idx]
+        
+        for i,lc in 
+
+
+        return joint_params,separate_params
+
+
+    def update_model(self,theta,param_list_global):
 
         for i in range(len(theta)):
-            self.param_dict[self.param_list_free[i]].currVal = theta[i]
+            self.param_dict[param_list_global[i]].currVal = theta[i]
 
         self.transit_model.update_model(self.param_dict)
         self.systematic_model.update_model(self.param_dict)
@@ -153,6 +183,8 @@ class LightcurveModel(object):
         if self.GP_used:
             self.GP_model.update_model(self.param_dict)
         return
+    
+
 
 
     def return_flux_err(self):
