@@ -394,20 +394,56 @@ class Sampling(object):
 
 
     # -------------------- Statistical Evaluation Methods -------------------- #
-    def chisq(self, theta=None):
+    def chisq(self, theta=None, lc_idx=None):
+        """
+        Inputs:
+        theta              - array, fitted parameters
+        lc_idx (optional)  - int, lightcurve index
+        Returns:
+        chisq       - total chisquare across all lightcurves (or if lc_idx not None returns chi-square for individual light curve)
+        """
         if theta is not None:
-            self.lightcurve.update_model(theta)
+            for ilc, lc in enumerate(self.lightcurve_list):
+                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                if lc_theta is not None:
+                    lc.update_model(lc_theta)
 
-        if self.lightcurve.GP_used:
-            mu, _ = self.lightcurve.calc_gp_component()
-            resids = (self.lightcurve.calc_residuals() - mu) / self.lightcurve.flux_err
+        if lc_idx not None:
+            lc = self.lightcurve_list[lc_idx]
+            if lc.GP_used:
+                    mu, _ = lc.calc_gp_component()
+                    resids = (lc.calc_residuals() - mu) / lc.flux_err
+                else:
+                    resids = lc.calc_residuals() / lc.flux_err
+            return np.sum(resids**2)
         else:
-            resids = self.lightcurve.calc_residuals() / self.lightcurve.flux_err
-
-        return np.sum(resids**2)
+            total_chisq = 0.0
+            for ilc, lc in enumerate(self.lightcurve_list):
+                if lc.GP_used:
+                    mu, _ = lc.calc_gp_component()
+                    resids = (lc.calc_residuals() - mu) / lc.flux_err
+                else:
+                    resids = lc.calc_residuals() / lc.flux_err
+                total_chisq += np.sum(resids**2)
+            return total_chisq
 
     def reducedChisq(self, theta=None):
-        return self.chisq(theta) / (len(self.lightcurve.flux_array) - self.lightcurve.npars)
+        """
+        Returns:
+        rchisq_dict    - dict, 'total' chisq of all lightcurves, 'lc0' chisq of lightcurve 0 etc..
+        """
+        rchisq_dict = {}
+        tchisq = 0.0
+        for ilc, lc in enumerate(self.lightcurve_list):
+            chisq = self.chisq(theta,ilc)
+            dof   = len(lc.flux_array) - len(lc.param_list_free)
+            rchisq_dict[f'lc{ilc}'] = chisq/dof 
+            tchisq += chisq
+
+        tdof = sum(len(lc.flux_array) for lc in self.lightcurve_list) - len(self.param_list_free)
+        rchisq_dict['total'] = tchisq / tdof
+
+        return rchisq_dict
 
     def rms(self, theta=None):
         if theta is not None:
