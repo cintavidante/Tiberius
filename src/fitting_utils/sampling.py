@@ -45,7 +45,7 @@ class Sampling(object):
             if sampling_method!='emcee':
                 raise NotImplementedError("Only written for emcee at the moment.")
 
-            joint_fitter = jf.JointFitter(lightcurve_list)
+            joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
 
             self.param_dict      = joint_fitter.param_dict_global
             self.prior_dict      = joint_fitter.prior_dict_global
@@ -125,9 +125,10 @@ class Sampling(object):
     
     def loglikelihood_emcee(self, theta, param_list):
         """Compute joint log likelihood as summation of individual lightcurve log likelihoods."""
-        logL_total = 0.0
+        logL_total   = 0.0
+        joint_fitter = jf.JointFitter(self.lightcurve_list) # hack
         for ilc, lc in enumerate(self.lightcurve_list):
-            lc_theta,lc_param_list = map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+            lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
             if lc_theta is not None:
                 lc.update_model_emcee(lc_theta,lc_param_list)
             residuals  = lc.calc_residuals()
@@ -284,13 +285,17 @@ class Sampling(object):
         print('\n')
         # generate median, upper and lower bounds
         med, up, low, mode = recover_quartiles_single(samples,namelist,bin_number=(wavelength_bin+1),verbose=True,save_result=True,burn=burn)
-
+        print(med)
         if not burn and npars > 1:
             # generate and save corner plot
             samples_corner = samples
             pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
 
-        self.lightcurve.update_model(med)
+        joint_fitter = jf.JointFitter(self.lightcurve_list)
+        
+        for ilc,lc in enumerate(self.lightcurve_list):
+            lc_theta,_ = joint_fitter.map_theta(med,ilc,)
+            lc.update_model_emcee(lc_theta)
 
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 

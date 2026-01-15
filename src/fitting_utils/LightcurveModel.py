@@ -56,9 +56,9 @@ class LightcurveModel(object):
             if fixed[i] == 'free':
                 self.param_list_free.append(param_names[i])
                 self.param_dict[param_names[i]] = Param(currVals[i])
-                self.param_dict[param_names[i]+'_1'] = file['prior_1'][i]
-                self.param_dict[param_names[i]+'_2'] = file['prior_2'][i]
-                self.param_dict[param_names[i]+'_prior'] = file['prior_type'][i]
+                self.prior_dict[param_names[i]+'_1'] = file['prior_1'][i]
+                self.prior_dict[param_names[i]+'_2'] = file['prior_2'][i]
+                self.prior_dict[param_names[i]+'_prior'] = file['prior_type'][i]
                 self.npars += 1
             elif fixed[i] == 'fixed':
                 self.param_dict[param_names[i]] = float(currVals[i])
@@ -69,8 +69,9 @@ class LightcurveModel(object):
                     raise SystemError('Joint fitting designated for inappropriate parameters. Check priors txt file.')
                 else:
                     print(f'{param_names[i]} will be jointly fit across all light curves.')
-                # add to the free parameters list
                 self.param_list_joint.append(param_names[i])
+                # add to the free parameters list too
+                self.param_list_free.append(param_names[i])
                 self.param_dict[param_names[i]] = Param(currVals[i])
                 self.prior_dict[param_names[i]+'_1'] = file['prior_1'][i]
                 self.prior_dict[param_names[i]+'_2'] = file['prior_2'][i]
@@ -158,31 +159,6 @@ class LightcurveModel(object):
 
         return model_calc
 
-    def unpack_theta(self,theta):
-        joint_params    = {}
-        separate_params = [{} for _ in self.nlightcurves]
-
-        idx = 0 # index through theta
-        for name in self.param_list_joint:
-            joint_params[name] = theta[idx]
-        
-        for i,lc in 
-
-
-        return joint_params,separate_params
-
-
-    def update_model_emcee(self,theta,param_list_global):
-
-        for i in range(len(theta)):
-            self.param_dict[param_list_global[i]].currVal = theta[i] # need param_list_global because the naming conventions are different
-
-        self.transit_model.update_model(self.param_dict)
-        self.systematic_model.update_model(self.param_dict)
-
-        if self.GP_used:
-            self.GP_model.update_model(self.param_dict)
-        return
     
     def update_model(self,theta):
 
