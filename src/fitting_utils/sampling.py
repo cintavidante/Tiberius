@@ -394,51 +394,50 @@ class Sampling(object):
 
 
     # -------------------- Statistical Evaluation Methods -------------------- #
-    def chisq(self, theta=None, lc_idx=None):
+    def chisq(self, theta=None):
         """
         Inputs:
         theta              - array, fitted parameters
         lc_idx (optional)  - int, lightcurve index
         Returns:
-        chisq       - total chisquare across all lightcurves (or if lc_idx not None returns chi-square for individual light curve)
+        chisq_dict         - dict, 'total' chisquare across all lightcurves, 'lc0' for lightcurve 0 etc..
         """
         if theta is not None:
+            joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
             for ilc, lc in enumerate(self.lightcurve_list):
                 lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                 if lc_theta is not None:
                     lc.update_model(lc_theta)
 
-        if lc_idx not None:
-            lc = self.lightcurve_list[lc_idx]
+
+        chisq_dict = {}
+        total_chisq = 0.0
+        for ilc, lc in enumerate(self.lightcurve_list):
             if lc.GP_used:
-                    mu, _ = lc.calc_gp_component()
-                    resids = (lc.calc_residuals() - mu) / lc.flux_err
-                else:
-                    resids = lc.calc_residuals() / lc.flux_err
-            return np.sum(resids**2)
-        else:
-            total_chisq = 0.0
-            for ilc, lc in enumerate(self.lightcurve_list):
-                if lc.GP_used:
-                    mu, _ = lc.calc_gp_component()
-                    resids = (lc.calc_residuals() - mu) / lc.flux_err
-                else:
-                    resids = lc.calc_residuals() / lc.flux_err
-                total_chisq += np.sum(resids**2)
-            return total_chisq
+                mu, _ = lc.calc_gp_component()
+                resids = (lc.calc_residuals() - mu) / lc.flux_err
+            else:
+                resids = lc.calc_residuals() / lc.flux_err
+
+            chisq_dict[f'lc{ilc}'] = np.sum(resids**2)
+            total_chisq += np.sum(resids**2)
+
+        chisq_dict['total'] = total_chisq
+        return chisq_dict
 
     def reducedChisq(self, theta=None):
         """
         Returns:
         rchisq_dict    - dict, 'total' chisq of all lightcurves, 'lc0' chisq of lightcurve 0 etc..
         """
+        chisq_dict  = self.chisq(theta)
         rchisq_dict = {}
-        tchisq = 0.0
         for ilc, lc in enumerate(self.lightcurve_list):
-            chisq = self.chisq(theta,ilc)
+            chisq = chisq_dict[f'lc{ilc}']
             dof   = len(lc.flux_array) - len(lc.param_list_free)
             rchisq_dict[f'lc{ilc}'] = chisq/dof 
-            tchisq += chisq
+        
+        tchisq = chisq_dict['total']
 
         tdof = sum(len(lc.flux_array) for lc in self.lightcurve_list) - len(self.param_list_free)
         rchisq_dict['total'] = tchisq / tdof
@@ -446,23 +445,37 @@ class Sampling(object):
         return rchisq_dict
 
     def rms(self, theta=None):
+        """
+        Returns:
+        rms_dict       - dict, 'lc0' RMS of lightcurve 0 etc.. 
+        """
+        rms_dict = {}
         if theta is not None:
-            self.lightcurve.update_model(theta)
+            joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
+            for ilc, lc in enumerate(self.lightcurve_list):
+                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                if lc_theta is not None:
+                    lc.update_model(lc_theta)
 
-        if self.lightcurve.GP_used:
-            mu, _ = self.lightcurve.calc_gp_component()
-            resids = (self.lightcurve.calc_residuals() - mu)
-        else:
-            resids = self.lightcurve.calc_residuals()
+        for ilc, lc in enumerate(self.lightcurve_list):
+            if lc.lightcurve.GP_used:
+                mu, _ = lc.lightcurve.calc_gp_component()
+                resids = (lc.lightcurve.calc_residuals() - mu)
+            else:
+                resids = lc.lightcurve.calc_residuals()
+            
+            rms_dict[f'lc{ilc}'] = np.sqrt(np.mean(resids**2))
 
-        return np.sqrt(np.mean(resids**2))
+        return rms_dict
 
     def BIC(self, theta=None):
         # note we can use loglikelihood_emcee also for LM fit since the statistic is independent of the sampling method
-        return self.lightcurve.npars * np.log(len(self.lightcurve.flux_array)) - 2 * self.loglikelihood_emcee(theta)
+        npars = len(self.param_list_free)
+        return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood_emcee(theta)
 
     def AIC(self, theta=None):
-        return 2 * self.lightcurve.npars - 2 * self.loglikelihood_emcee(theta)
+        npars = len(self.param_list_free)
+        return 2 * npars - 2 * self.loglikelihood_emcee(theta)
 
     def red_noise_beta(self, theta=None):
         # Get the RMS of the residuals using the existing function
@@ -545,9 +558,9 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
 
         diagnostic_tab = open('LM_statistics.txt',read_mode)
 
-    fitted_chi2 = sampling_model.chisq()
-    fitted_reducedChi2 = sampling_model.reducedChisq()
-    fitted_rms = sampling_model.rms()*1e6
+    fitted_chi2 = sampling_model.chisq() # returns dictionary
+    fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
+    fitted_rms = sampling_model.rms()*1e6 # returns dictionary
     fitted_BIC = sampling_model.BIC()
     fitted_AIC = sampling_model.AIC()
 
