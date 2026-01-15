@@ -39,17 +39,36 @@ else:
 time_list   = np.array([str(i) for i in input_dict['time_file'].split(',')])
 flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
 error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
-prior_file_list = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
+prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
+model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
 
 if len(flux_list)==len(error_list)==len(time_list)==len(wvl_bin_full_width_list)==nlc:
     print(f"Fitting {nlc} light curves jointly..")
 else:
     sys.exit("Multiple binning arrays provided without corresponding lightcurves. Check fitting_input.txt file.")
 
+wb = args.wavelength_bin
+
+### Plotting controls
+
+rebin_data = input_dict['rebin_data']
+if rebin_data is not None:
+    rebin_data = int(rebin_data)
+
+show_plots = bool(int(input_dict['show_plots']))
+save_plots = bool(int(input_dict['save_plots']))
+
+cwd = os.getcwd()
+output_foldername = cwd + '/' + str(input_dict['output_foldername']) + '/'
+
+os.makedirs(output_foldername, exist_ok=True)
+if save_plots:
+    os.makedirs(output_foldername + '/Figures', exist_ok=True)
+os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
 
                                             
 
-def construct_lightcurves(ilightcurve):
+def construct_lightcurves(ilightcurve,wb):
     print(f"Construct light curve {ilightcurve+1}..")
 
     try:
@@ -62,27 +81,8 @@ def construct_lightcurves(ilightcurve):
         white_light_fit = False
         nbins = len(wavelength_centres)
 
-    wb = args.wavelength_bin
-
     if white_light_fit and wb > 1:
         raise ValueError('if fitting wavelength bins, need to have a wavelength array in fitting_input.txt')
-
-    ### Plotting controls
-
-    rebin_data = input_dict['rebin_data']
-    if rebin_data is not None:
-        rebin_data = int(rebin_data)
-
-    show_plots = bool(int(input_dict['show_plots']))
-    save_plots = bool(int(input_dict['save_plots']))
-
-    cwd = os.getcwd()
-    output_foldername = cwd + '/' + str(input_dict['output_foldername']) + '/'
-
-    os.makedirs(output_foldername, exist_ok=True)
-    if save_plots:
-        os.makedirs(output_foldername + '/Figures', exist_ok=True)
-    os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
 
     ### Load in various input arrays
     time = pickle.load(open(time_list[ilightcurve],'rb'))
@@ -165,8 +165,9 @@ def construct_lightcurves(ilightcurve):
     if input_dict['polynomial_orders'] is not None:
         fit_models['systematics_model'].append('polynomial')
         model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in input_dict['polynomial_orders'].split(',')])
-        model_input_files = [i.strip() for i in input_dict['model_input_files'].split(',')]
-
+        model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
+        print(model_input_files.shape)
+        
     # determine whether we're using an exponential ramp model or not
     if bool(int(input_dict['exponential_ramp'])):
         fit_models['systematics_model'].append('exponential_ramp')
@@ -264,7 +265,7 @@ def construct_lightcurves(ilightcurve):
         systematics_model_inputs = np.array(systematics_model_inputs)[:,keep_idx].reshape(len(systematics_model_inputs),len(np.where(keep_idx == True)[0]))
         if GP_used:
             GP_model_inputs = np.array(GP_model_inputs)[:,keep_idx].reshape(len(GP_model_inputs),len(np.where(keep_idx == True)[0]))
-        pickle.dump(keep_idx,open(output_foldername + '/pickled_objects/' + 'data_quality_flags_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb'))
+        pickle.dump(keep_idx,open(output_foldername + '/pickled_objects/' + 'data_quality_flags_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
 
     ### for GP optimisation and variance limits
@@ -280,16 +281,16 @@ def construct_lightcurves(ilightcurve):
         flux_error /= oot_median
 
     ### Save clipped arrays for ease of future plotting
-    pickle.dump(flux,open(output_foldername + '/pickled_objects/' + 'Used_flux_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb')) # add '0' in front of single digit wavelength bin numbers so that linux sorts them properly
-    pickle.dump(time,open(output_foldername + '/pickled_objects/' + 'Used_time_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb'))
-    pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_error_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb'))
+    pickle.dump(flux,open(output_foldername + '/pickled_objects/' + 'Used_flux_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb')) # add '0' in front of single digit wavelength bin numbers so that linux sorts them properly
+    pickle.dump(time,open(output_foldername + '/pickled_objects/' + 'Used_time_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
+    pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_error_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
     model_inputs['systematic_model']['model_inputs'] = systematics_model_inputs
-    pickle.dump(systematics_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb'))
+    pickle.dump(systematics_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
     if GP_used:
         model_inputs['GP_model']['model_inputs'] = GP_model_inputs
-        pickle.dump(GP_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_GP_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve+1),str(wb+1).zfill(4)),'wb'))
+        pickle.dump(GP_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_GP_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
     model_inputs['transit_model'] = {}
     model_inputs['transit_model']['use_kipping'] = bool(int(input_dict['use_kipping_parameterisation']))
@@ -313,15 +314,12 @@ def construct_lightcurves(ilightcurve):
     param_list_free = lc_class.return_free_parameter_list()
     nDims = len(param_list_free)
 
-    plt.figure()
-    plt.errorbar(time,flux,flux_error)
-    plt.show()
     print(f"Light curve {ilightcurve+1} constructed.\n")
     return lc_class
 
 lightcurve_objects = []
 for i in range(nlc):
-    lightcurve_objects.append(construct_lightcurves(i))
+    lightcurve_objects.append(construct_lightcurves(i,wb))
 
 
 
@@ -355,9 +353,13 @@ sampling = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
 
 if sampling_method == 'emcee':
 
-    fitted_lightcurve = sampling.run_emcee(wavelength_bin=wb)
-    fig = pu.plot_single_model(fitted_lightcurve,time,flux,flux_error,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
-    pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
+    fitted_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
+    for i in range(nlc):
+        _time = lightcurve_objects[i].time_array
+        _flux = lightcurve_objects[i].flux_array
+        _flux_error = lightcurve_objects[i].flux_err
+        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+    #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
 
 elif sampling_method == 'dynesty':
     result = sampling.run_dynesty()
@@ -387,6 +389,6 @@ elif sampling_method == 'LM':
     # s.save_LM_results(fitted_lightcurve, param_medians, param_uncertainties,wb+1,verbose=True)
     pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
-
-if white_light_fit:
-    s.update_prior_file(prior_file)
+# comment out for the moment
+#if white_light_fit:
+ #   s.update_prior_file(prior_file)

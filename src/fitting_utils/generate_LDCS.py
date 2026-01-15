@@ -32,10 +32,6 @@ wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
 wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
-if nlc>1:
-    joint_fit = True
-else:
-    joint_fit = False
 
 for i in range(nlc):
     try:

@@ -640,7 +640,7 @@ def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mas
     input_dict = parseInput('./fitting_input.txt')
 
     # load in data
-    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask)
+    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask,lc_idx)
 
     rp = []
     rp_up = []
@@ -957,7 +957,7 @@ def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_w
 
     return fig
 
-def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
+def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=None):
 
     """
     Function to plot the expected (LDTk-generated) quadratic limb darkening coefficients vs. the actual fitted limb darkening coefficients.
@@ -965,13 +965,15 @@ def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
     This function loads the limb darkening coefficients from files within the cwd, so these do not need to be supplied to the function.
 
     Input:
-    save_fig - True/False - save the resulting figure? Default=False
-    bin_mask - a list of wavelength bins to be ignored by the plot. Default=None (no masking of bins)
+    directory  - str, path to files and for saving
+    lc_idx     - int, index of the lightcurve (0 if single lightcurve fit)
+    save_fig   - bool, save the resulting figure? Default=False
+    bin_mask   - list, a list of wavelength bins to be ignored by the plot. Default=None (no masking of bins)
 
     Returns:
     Nothing, it just plots the figure"""
 
-    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt('./LD_coefficients.txt',unpack=True)
+    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'./LD_coefficients_{lc_idx}.txt',unpack=True)
     wvl_error = wvl_error/2
 
     try:
@@ -979,10 +981,10 @@ def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
     except:
         best_dict = parseInput('./best_fit_parameters_GP.txt')
 
-    model_list = glob.glob('%s/pickled_objects/fitted_lightcurve_model_*.pickle'%directory)
+    model_list = glob.glob(f'{directory}/pickled_objects/fitted_lightcurve{lc_idx}_model_*.pickle')
     nbins = len(model_list)
 
-    completed_bins = load_completed_bins(directory,return_index_only=True,mask=bin_mask)
+    completed_bins = load_completed_bins(directory,return_index_only=True,mask=bin_mask,lc_idx=lc_idx)
 
     wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.atleast_1d(wvl_centre)[completed_bins],np.atleast_1d(wvl_error)[completed_bins],\
     np.atleast_1d(ldtk_u1)[completed_bins],np.atleast_1d(ldtk_u1_err)[completed_bins],np.atleast_1d(ldtk_u2)[completed_bins],np.atleast_1d(ldtk_u2_err)[completed_bins],\
@@ -1149,8 +1151,8 @@ def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
 
 
     if save_fig:
-        plt.savefig('%s/expected_vs_calculated_ldcs.pdf'%directory,bbox_inches='tight')
-        plt.savefig('%s/expected_vs_calculated_ldcs.png'%directory,bbox_inches='tight')
+        plt.savefig(f'{directory}/expected_vs_calculated_ldcs_lc{lc_idx}.pdf',bbox_inches='tight')
+        plt.savefig(f'{directory}/expected_vs_calculated_ldcs_lc{lc_idx}.png',bbox_inches='tight')
         plt.close()
     else:
         plt.show()
@@ -1296,15 +1298,16 @@ def weighted_mean_uneven_errors(rp,rp_up,rp_low,model=1):
     return x_numerator/x_denominator, np.sqrt(e_numerator/(e_denominator**2))
 
 
-def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,return_index_only=False):
+def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,return_index_only=False,lc_idx=0):
     """A function that loads in all model, time, flux, and error files within the current directory, while working out which bins have successfully completed fitting.
 
     Inputs (all optional):
-    directory: the path to the files to load in. The default is the current working directory, which is nearly always correct
-    start_bin: if wanting to ignore the first N bins, define this number. Default=None
-    end_bin: if wanting to ignore the last N bins, define this number. Default=None
-    mask: if wanting to mask certain bins, parse these bin indices as an array here. Default=None
+    directory         - str, the path to the files to load in. The default is the current working directory, which is nearly always correct
+    start_bin         - int, if wanting to ignore the first N bins, define this number. Default=None
+    end_bin           - int, if wanting to ignore the last N bins, define this number. Default=None
+    mask              - int, if wanting to mask certain bins, parse these bin indices as an array here. Default=None
     return_index_only - True/False : if wanting to only return the indices of the completed bins, set this to True. Default=False.
+    lc_idx            - int, index of the lightcurve (0 if single lightcurve fit)
 
     Returns:
     if return_index_only:
@@ -1313,7 +1316,7 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         x,y,e,e_r,m,m_in,w,we,completed_bins,nbins - arrays of time, flux, error, rescaled errors, TransitGPPM models, model input files, wavelength bin centres, wavelength bin widths, the indices of the completed bin fits, the number of bins with completed fits"
     """
 
-    model_files = np.array(sorted(glob.glob('%s/pickled_objects/fitted_lightcurve_model_*.pickle'%directory)))
+    model_files = np.array(sorted(glob.glob(f'{directory}/pickled_objects/fitted_lightcurve{lc_idx}_model_*.pickle')))
 
     # determine the completed bins by finding the XXX number in the "_wbXXX" in the file names
     completed_bins = np.array([int(m.split("wb")[-1].split(".")[0]) for m in model_files])
@@ -1322,13 +1325,16 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
     nbins = len(completed_bins)
 
     ### Load in data arrays
-    time_files = np.array(["%s/pickled_objects/Used_time_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    flux_files = np.array(["%s/pickled_objects/Used_flux_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    error_files = np.array(["%s/pickled_objects/Used_error_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    model_input_files = np.array(["%s/pickled_objects/Used_model_inputs_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
+    time_files = np.array(["%s/pickled_objects/Used_time_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    flux_files = np.array(["%s/pickled_objects/Used_flux_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    error_files = np.array(["%s/pickled_objects/Used_error_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    model_input_files = np.array(["%s/pickled_objects/Used_model_inputs_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
 
     # For the error, we preferentially used rescaled errors. Either by reduced chi2 for PM fits or by white noise kernel in GP fits.
-    rescaled_error_files = np.array(["%s/pickled_objects/Used_rescaled_errors_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
+    try:
+        rescaled_error_files = np.array(["%s/pickled_objects/Used_rescaled_errors_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins]) # not yet defined for emcee
+    except:
+        pass 
 
     x = [pickle.load(open(i,'rb')) for i in time_files]
     y = [pickle.load(open(i,'rb')) for i in flux_files]
@@ -1340,7 +1346,7 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         e_r = None
 
     ### Load in LD coefficients table for the wavelength centres and widths of the bins
-    w,we = np.loadtxt('./LD_coefficients.txt',unpack=True,usecols=[0,1])
+    w,we = np.loadtxt(f'./LD_coefficients_{lc_idx}.txt',unpack=True,usecols=[0,1])
     w,we = np.atleast_1d(w)[completed_bins-1],np.atleast_1d(we)[completed_bins-1]
 
     ### Bin mask

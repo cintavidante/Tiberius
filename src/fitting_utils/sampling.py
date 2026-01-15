@@ -45,11 +45,11 @@ class Sampling(object):
             if sampling_method!='emcee':
                 raise NotImplementedError("Only written for emcee at the moment.")
 
-            joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
+            self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
 
-            self.param_dict      = joint_fitter.param_dict_global
-            self.prior_dict      = joint_fitter.prior_dict_global
-            self.param_list_free = joint_fitter.param_list_global
+            self.param_dict      = self.joint_fitter.param_dict_global
+            self.prior_dict      = self.joint_fitter.prior_dict_global
+            self.param_list_free = self.joint_fitter.param_list_global
         
         else:
             self.lightcurve = lightcurve_list[0]
@@ -135,10 +135,9 @@ class Sampling(object):
         logL_total - float, total logL (summation if multiple lightcurves jointly fit)
         """
         logL_total   = 0.0
-        joint_fitter = jf.JointFitter(self.lightcurve_list) # hack
         for ilc, lc in enumerate(self.lightcurve_list):
             if theta is not None:
-                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                 lc.update_model(lc_theta)
             residuals  = lc.calc_residuals()
             flux_error = lc.return_flux_err()
@@ -300,16 +299,16 @@ class Sampling(object):
             samples_corner = samples
             pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
 
-        joint_fitter = jf.JointFitter(self.lightcurve_list)
-        
+        print('Before update: {}'.format(self.lightcurve_list[0].param_dict['rp'].currVal))
         for ilc,lc in enumerate(self.lightcurve_list):
-            lc_theta,_ = joint_fitter.map_theta(med,ilc,namelist)
+            lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
             lc.update_model(lc_theta)
-
+        print('After update: {}'.format(self.lightcurve_list[0].param_dict['rp'].currVal))
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
         if not burn:
-            pickle.dump(self.lightcurve,open('fitted_lightcurve_model_wb%s.pickle'%(str(wavelength_bin+1).zfill(4)),'wb'))
+            for ilc,lc in enumerate(self.lightcurve_list):
+                pickle.dump(lc,open(f'fitted_lightcurve{ilc}_model_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
 
         if burn:
             print("...burn-in complete for bin %d"%(wavelength_bin+1))
@@ -318,7 +317,7 @@ class Sampling(object):
 
         sampler.reset()
 
-        return self.lightcurve
+        return self.lightcurve_list
 
     ### -------- Levenberg-Marquadt methods -------- ###
     def run_LM(self,wavelength_bin=0):
@@ -412,10 +411,9 @@ class Sampling(object):
         chisq_dict         - dict, 'total' chisquare across all lightcurves, 'lc0' for lightcurve 0 etc..
         """
         if theta is not None:
-            joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
             for ilc, lc in enumerate(self.lightcurve_list):
                 if theta is not None:
-                    lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                     lc.update_model(lc_theta)
 
 
@@ -460,10 +458,9 @@ class Sampling(object):
         """
         rms_dict = {}
         if theta is not None:
-            joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
             for ilc, lc in enumerate(self.lightcurve_list):
                 if theta is not None:
-                    lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
@@ -580,37 +577,37 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
     if sampling_model.nlightcurves > 1:
         print("\n" + "="*40)
         print("Joint fit statistics")
-        print("\n" + "="*40)
+        print("="*40)
 
-        print("\n Global statistics:")
+        print("\nGlobal statistics:")
         print('Total chi2 = %.3f' % fitted_chi2[f'total'])
-        print('Total reduced chi2 = %.3f' % fitted_reducedChi2)[f'total']
+        print('Total reduced chi2 = %.3f' % fitted_reducedChi2[f'total'])
 
     print('BIC = %f' % fitted_BIC) # global (joint likelihood)
     print('AIC = %f' % fitted_AIC) # global
     
-    print("Individual light curve statistics:")
+    print("\nIndividual light curve statistics:")
     for ilc,lc in enumerate(sampling_model.lightcurve_list):
         print(f'LC {ilc}')
-        print('  chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
-        print('  Reduced chi2 = %.3f' % fitted_reducedChi2)[f'lc{ilc}']
-        print('  Residual RMS (ppm) = %d' % fitted_rms[f'lc{ilc}']*1e6)
+        print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
+        print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
+        print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
         
     
 
     diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
-    if self.nlightcurves > 1:
-        diagnostic_tab.write("--- Joint fit statistics ---")
+    if sampling_model.nlightcurves > 1:
+        diagnostic_tab.write("--- Joint fit statistics ---\n")
 
-        diagnostic_tab.write("\n Global statistics:")
+        diagnostic_tab.write("Global statistics:")
         diagnostic_tab.write('Total chi2 = %.3f \n' % fitted_chi2[f'total'])
-        diagnostic_tab.write('Total reduced chi2 = %.3f \n' % fitted_reducedChi2)[f'total']
+        diagnostic_tab.write('Total reduced chi2 = %.3f \n' % fitted_reducedChi2[f'total'])
 
     diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
     diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
 
     if sampling_model.nlightcurves > 1:
-        diagnostic_tab.write("Individual light curve statistics:")
+        diagnostic_tab.write("Individual light curve statistics:\n")
 
     for ilc,lc in enumerate(sampling_model.lightcurve_list):
         diagnostic_tab.write('Residual RMS (ppm) = %d \n' % fitted_rms[f'lc{ilc}'])
