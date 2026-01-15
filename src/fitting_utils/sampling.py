@@ -561,26 +561,53 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
     fitted_chi2 = sampling_model.chisq() # returns dictionary
     fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
     fitted_rms = sampling_model.rms()*1e6 # returns dictionary
-    fitted_BIC = sampling_model.BIC()
-    fitted_AIC = sampling_model.AIC()
+    fitted_BIC = sampling_model.BIC() # returns float
+    fitted_AIC = sampling_model.AIC() # returns float
 
     print('\nCalculating statistics for best fit...')
-    print('chi2 = %.3f' % fitted_chi2)
-    print('Reduced chi2 = %.3f' % fitted_reducedChi2)
-    print('Residual RMS (ppm) = %d' % fitted_rms)
-    print('BIC = %f' % fitted_BIC)
-    print('AIC = %f' % fitted_AIC)
+    if self.nlightcurves > 1:
+        print("\n" + "="*40)
+        print("Joint fit statistics")
+        print("\n" + "="*40)
+
+        print("\n Global statistics:")
+        print('Total chi2 = %.3f' % fitted_chi2[f'total'])
+        print('Total reduced chi2 = %.3f' % fitted_reducedChi2)[f'total']
+
+    print('BIC = %f' % fitted_BIC) # global (joint likelihood)
+    print('AIC = %f' % fitted_AIC) # global
+    
+    print("Individual light curve statistics:")
+    for ilc,lc in enumerate(self.lightcurve_list):
+        print(f'LC {ilc}')
+        print('  chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
+        print('  Reduced chi2 = %.3f' % fitted_reducedChi2)[f'lc{ilc}']
+        print('  Residual RMS (ppm) = %d' % fitted_rms[f'lc{ilc}'])
+        
+    
 
     diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
-    diagnostic_tab.write('Chi2 = %.3f \n' % fitted_chi2)
-    diagnostic_tab.write('Reduced chi2 = %.3f \n' % fitted_reducedChi2)
-    diagnostic_tab.write('Residual RMS (ppm) = %d \n' % fitted_rms)
-    diagnostic_tab.write('BIC = %f \n' % fitted_BIC)
-    diagnostic_tab.write('AIC = %f \n' % fitted_AIC)
+    if self.nlightcurves > 1:
+        diagnostic_tab.write("--- Joint fit statistics ---")
+
+        diagnostic_tab.write("\n Global statistics:")
+        diagnostic_tab.write('Total chi2 = %.3f \n' % fitted_chi2[f'total'])
+        diagnostic_tab.write('Total reduced chi2 = %.3f \n' % fitted_reducedChi2)[f'total']
+
+    diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
+    diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
+
+    if self.nlightcurves > 1:
+        diagnostic_tab.write("Individual light curve statistics:")
+
+    for ilc,lc in enumerate(self.lightcurve_list):
+        diagnostic_tab.write('Residual RMS (ppm) = %d \n' % fitted_rms[f'lc{ilc}'])
+        
 
     if emcee_sampler is not None:
         try:
-            print('\nAutocorrelation time for each parameter = ',np.round(emcee_sampler.acor).astype(int))
+            print(f'\nFree parameters = {self.param_list_free}')
+            print('Autocorrelation time for each parameter = ',np.round(emcee_sampler.acor).astype(int))
             # Alternatively something like: emcee.autocorr.integrated_time(sampler.chain, low=10, high=None, step=1, c=5, full_output=True,axis=0, fast=False)
             diagnostic_tab.write('\nAutocorrelation time for each parameter = ')
             for ac in np.round(emcee_sampler.acor).astype(int):
