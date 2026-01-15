@@ -20,10 +20,7 @@ class JointFitter(object):
         
         """
 
-        self.lightcurve_list = lightcurve_list 
-        #self.sampling_list   = sampling_list 
-        #if len(sampling_list)!=len(lightcurve_list):
-        #    raise ValueError("Sampling list is not the same length as lightcurve list.")
+        self.lightcurve_list = lightcurve_list
         self.nlightcurves    = len(lightcurve_list)
 
         # Collect all joint parameters (should be same across lightcurves)
@@ -38,7 +35,6 @@ class JointFitter(object):
         self.param_dict_global = {}
         self.prior_dict_global = {}
 
-        if verbose: print("Adding joint variables:")
         # Add the joint parameters to dictionaries
         for param_name in joint_param_names:
             for ilc,lc in enumerate(self.lightcurve_list):
@@ -53,7 +49,6 @@ class JointFitter(object):
                         self.prior_dict_global[param_name+'_prior'] = lc.prior_dict[param_name+'_prior']
                     #else: need to add a sanity check that the definitions are the same across datasets (in prior.txt)
                 
-        if verbose: print("Adding individual free parameters:")
         # Add the individual free parameters
         for ilc,lc in enumerate(self.lightcurve_list):
             for param_name in lc.param_list_free:

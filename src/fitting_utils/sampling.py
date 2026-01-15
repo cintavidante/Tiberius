@@ -299,11 +299,9 @@ class Sampling(object):
             samples_corner = samples
             pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
 
-        print('Before update: {}'.format(self.lightcurve_list[0].param_dict['rp'].currVal))
         for ilc,lc in enumerate(self.lightcurve_list):
             lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
             lc.update_model(lc_theta)
-        print('After update: {}'.format(self.lightcurve_list[0].param_dict['rp'].currVal))
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
         if not burn:

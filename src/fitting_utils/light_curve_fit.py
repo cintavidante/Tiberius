@@ -166,7 +166,6 @@ def construct_lightcurves(ilightcurve,wb):
         fit_models['systematics_model'].append('polynomial')
         model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in input_dict['polynomial_orders'].split(',')])
         model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
-        print(model_input_files.shape)
         
     # determine whether we're using an exponential ramp model or not
     if bool(int(input_dict['exponential_ramp'])):
