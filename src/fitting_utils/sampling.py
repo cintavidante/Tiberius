@@ -137,8 +137,8 @@ class Sampling(object):
         logL_total   = 0.0
         joint_fitter = jf.JointFitter(self.lightcurve_list) # hack
         for ilc, lc in enumerate(self.lightcurve_list):
-            lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
-            if lc_theta is not None:
+            if theta is not None:
+                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                 lc.update_model(lc_theta)
             residuals  = lc.calc_residuals()
             flux_error = lc.return_flux_err()
@@ -414,8 +414,8 @@ class Sampling(object):
         if theta is not None:
             joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
             for ilc, lc in enumerate(self.lightcurve_list):
-                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
-                if lc_theta is not None:
+                if theta is not None:
+                    lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                     lc.update_model(lc_theta)
 
 
@@ -462,8 +462,8 @@ class Sampling(object):
         if theta is not None:
             joint_fitter = jf.JointFitter(self.lightcurve_list,verbose=False) # hack
             for ilc, lc in enumerate(self.lightcurve_list):
-                lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
-                if lc_theta is not None:
+                if theta is not None:
+                    lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
@@ -570,14 +570,14 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
 
         diagnostic_tab = open('LM_statistics.txt',read_mode)
 
-    fitted_chi2 = sampling_model.chisq() # returns dictionary
+    fitted_chi2        = sampling_model.chisq() # returns dictionary
     fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
-    fitted_rms = sampling_model.rms() # returns dictionary
-    fitted_BIC = sampling_model.BIC() # returns float
-    fitted_AIC = sampling_model.AIC() # returns float
+    fitted_rms         = sampling_model.rms() # returns dictionary
+    fitted_BIC         = sampling_model.BIC() # returns float
+    fitted_AIC         = sampling_model.AIC() # returns float
 
     print('\nCalculating statistics for best fit...')
-    if self.nlightcurves > 1:
+    if sampling_model.nlightcurves > 1:
         print("\n" + "="*40)
         print("Joint fit statistics")
         print("\n" + "="*40)
@@ -590,7 +590,7 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
     print('AIC = %f' % fitted_AIC) # global
     
     print("Individual light curve statistics:")
-    for ilc,lc in enumerate(self.lightcurve_list):
+    for ilc,lc in enumerate(sampling_model.lightcurve_list):
         print(f'LC {ilc}')
         print('  chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
         print('  Reduced chi2 = %.3f' % fitted_reducedChi2)[f'lc{ilc}']
@@ -609,16 +609,16 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
     diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
     diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
 
-    if self.nlightcurves > 1:
+    if sampling_model.nlightcurves > 1:
         diagnostic_tab.write("Individual light curve statistics:")
 
-    for ilc,lc in enumerate(self.lightcurve_list):
+    for ilc,lc in enumerate(sampling_model.lightcurve_list):
         diagnostic_tab.write('Residual RMS (ppm) = %d \n' % fitted_rms[f'lc{ilc}'])
         
 
     if emcee_sampler is not None:
         try:
-            print(f'\nFree parameters = {self.param_list_free}')
+            print(f'\nFree parameters = {sampling_model.param_list_free}')
             print('Autocorrelation time for each parameter = ',np.round(emcee_sampler.acor).astype(int))
             # Alternatively something like: emcee.autocorr.integrated_time(sampler.chain, low=10, high=None, step=1, c=5, full_output=True,axis=0, fast=False)
             diagnostic_tab.write('\nAutocorrelation time for each parameter = ')
