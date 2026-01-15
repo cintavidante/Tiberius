@@ -130,7 +130,7 @@ class Sampling(object):
         for ilc, lc in enumerate(self.lightcurve_list):
             lc_theta,lc_param_list = joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
             if lc_theta is not None:
-                lc.update_model_emcee(lc_theta,lc_param_list)
+                lc.update_model(lc_theta)
             residuals  = lc.calc_residuals()
             flux_error = lc.return_flux_err()
             N = len(residuals)
@@ -285,7 +285,7 @@ class Sampling(object):
         print('\n')
         # generate median, upper and lower bounds
         med, up, low, mode = recover_quartiles_single(samples,namelist,bin_number=(wavelength_bin+1),verbose=True,save_result=True,burn=burn)
-        print(med)
+        
         if not burn and npars > 1:
             # generate and save corner plot
             samples_corner = samples
@@ -294,8 +294,8 @@ class Sampling(object):
         joint_fitter = jf.JointFitter(self.lightcurve_list)
         
         for ilc,lc in enumerate(self.lightcurve_list):
-            lc_theta,_ = joint_fitter.map_theta(med,ilc,)
-            lc.update_model_emcee(lc_theta)
+            lc_theta,_ = joint_fitter.map_theta(med,ilc,namelist)
+            lc.update_model(lc_theta)
 
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
