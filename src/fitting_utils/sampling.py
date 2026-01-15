@@ -124,7 +124,16 @@ class Sampling(object):
 
     
     def loglikelihood_emcee(self, theta, param_list):
-        """Compute joint log likelihood as summation of individual lightcurve log likelihoods."""
+        """
+        Compute joint log likelihood as summation of individual lightcurve log likelihoods.
+        
+        Inputs:
+        theta      - array, vector of parameter values
+        param_list - list, global parameter names for mapping to each lightcurve (e.g. t0, c1_lc0, c2_lc0)
+        
+        Returns:
+        logL_total - float, total logL (summation if multiple lightcurves jointly fit)
+        """
         logL_total   = 0.0
         joint_fitter = jf.JointFitter(self.lightcurve_list) # hack
         for ilc, lc in enumerate(self.lightcurve_list):
@@ -471,11 +480,11 @@ class Sampling(object):
     def BIC(self, theta=None):
         # note we can use loglikelihood_emcee also for LM fit since the statistic is independent of the sampling method
         npars = len(self.param_list_free)
-        return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood_emcee(theta)
+        return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood_emcee(theta,self.param_list_free)
 
     def AIC(self, theta=None):
         npars = len(self.param_list_free)
-        return 2 * npars - 2 * self.loglikelihood_emcee(theta)
+        return 2 * npars - 2 * self.loglikelihood_emcee(theta,self.param_list_free)
 
     def red_noise_beta(self, theta=None):
         # Get the RMS of the residuals using the existing function
