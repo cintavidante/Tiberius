@@ -458,11 +458,11 @@ class Sampling(object):
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.lightcurve.GP_used:
-                mu, _ = lc.lightcurve.calc_gp_component()
-                resids = (lc.lightcurve.calc_residuals() - mu)
+            if lc.GP_used:
+                mu, _ = lc.calc_gp_component()
+                resids = (lc.calc_residuals() - mu)
             else:
-                resids = lc.lightcurve.calc_residuals()
+                resids = lc.calc_residuals()
             
             rms_dict[f'lc{ilc}'] = np.sqrt(np.mean(resids**2))
 
@@ -479,26 +479,29 @@ class Sampling(object):
 
     def red_noise_beta(self, theta=None):
         # Get the RMS of the residuals using the existing function
-        rms_val = self.rms(theta)
+        rms_dict = self.rms(theta)
 
-        time_diff = np.diff(self.lightcurve.time_array).min() * 24 * 60  # in minutes
-        max_points = int(np.round(30 / time_diff))
-        bins = np.linspace(self.lightcurve.time_array[0],
-                           self.lightcurve.time_array[-1],
-                           int(len(self.lightcurve.time_array) / max_points))
+        for ilc,lc in enumerate(self.lightcurve_list):
+            rms_val   = rms_dict[f'lc{ilc}']
 
-        # Rebin residuals
-        _, binned_y, _ = pu.rebin(bins,
-                                  self.lightcurve.time_array,
-                                  self.lightcurve.flux_array - self.lightcurve.calc(),
-                                  self.lightcurve.flux_err, weighted=False)
+            time_diff = np.diff(lc.time_array).min() * 24 * 60  # in minutes
+            max_points = int(np.round(30 / time_diff))
+            bins = np.linspace(lc.time_array[0],
+                            lc.time_array[-1],
+                            int(len(lc.time_array) / max_points))
 
-        max_rms = np.sqrt(np.nanmean(binned_y**2))
+            # Rebin residuals
+            _, binned_y, _ = pu.rebin(bins,
+                                    lc.time_array,
+                                    lc.flux_array - lc.calc(),
+                                    lc.flux_err, weighted=False)
 
-        gaussian_white_noise = np.array([1, 1/np.sqrt(max_points)])
-        offset = np.max(gaussian_white_noise) / rms_val
-        gaussian_white_noise /= offset
-        beta_factor = max(max_rms / gaussian_white_noise)
+            max_rms = np.sqrt(np.nanmean(binned_y**2))
+
+            gaussian_white_noise = np.array([1, 1/np.sqrt(max_points)])
+            offset = np.max(gaussian_white_noise) / rms_val
+            gaussian_white_noise /= offset
+            beta_factor = max(max_rms / gaussian_white_noise)
 
         return beta_factor
 
@@ -560,7 +563,7 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
 
     fitted_chi2 = sampling_model.chisq() # returns dictionary
     fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
-    fitted_rms = sampling_model.rms()*1e6 # returns dictionary
+    fitted_rms = sampling_model.rms() # returns dictionary
     fitted_BIC = sampling_model.BIC() # returns float
     fitted_AIC = sampling_model.AIC() # returns float
 
@@ -582,7 +585,7 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
         print(f'LC {ilc}')
         print('  chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
         print('  Reduced chi2 = %.3f' % fitted_reducedChi2)[f'lc{ilc}']
-        print('  Residual RMS (ppm) = %d' % fitted_rms[f'lc{ilc}'])
+        print('  Residual RMS (ppm) = %d' % fitted_rms[f'lc{ilc}']*1e6)
         
     
 
