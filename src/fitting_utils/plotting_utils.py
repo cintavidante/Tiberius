@@ -360,7 +360,7 @@ def plot_models(model_list,time,flux_array,error_array,wvl_centre,rebin_data=Non
     return fig
 
 
-def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,systematics_model_inputs=None):
+def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,systematics_model_inputs=None):
     """
     Plot a single light curve with model.
 
@@ -369,6 +369,7 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
     time - array of times
     flux - array of fluxes
     error - array of errors on fluxes
+    lc_idx - int, lightcurve index in the stack of fitted light curves (index 0 if single lightcurve fit)
     rebin_data - set to integer if wanting to re-bin the data. Default = None (no binning)
     save_fig - True/False: save the figure to file? Default=False
     wavelength_bin - the number of the wavelength bin being plotted, useful for saving to file. Default=None
@@ -544,9 +545,9 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
 
         if rebin_data is None:
             # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
-            plt.savefig('fitted_model%s.png'%wb,bbox_inches='tight',dpi=200)
+            plt.savefig(f'fitted_model_lc{lc_idx}_{wb}.png',bbox_inches='tight',dpi=200)
         else:
-            plt.savefig('fitted_model%s_rebin_%d.png'%(wb,rebin_data),bbox_inches='tight',dpi=200)
+            plt.savefig('fitted_model_lc%s_%s_rebin_%d.png'%(lc_idx,wb,rebin_data),bbox_inches='tight',dpi=200)
 
         plt.close()
 
@@ -613,15 +614,16 @@ def rebin(xbins,x,y,e=None,weighted=False,errors_from_rms=False):
     ebin = np.array(ebin)
     return (xbin,ybin,ebin)
 
-def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False):
+def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False):
     """
     A function that generates/recovers the transmission spectrum from the table of best fit parameters resulting from pm_fit.py and gp_fit.py.
 
     Input:
     directory - the directory containing the best_fit_parameters.dat, fitting_input.txt, fitted_lightcurve_model*.pickle and LD_coefficients.dat files
-    save_fig - True/False: save the outputted transmission spectrum or not? Default=False
-    plot_fig - True/False: plot the outputted transmission spectrum or not? If False, code returns numpy arrays of Rp/Rs and errors. Default=True
-    bin_mask - set to a list of integers to mask certain wavelength bins from the transmission spectrum if desired. Indexed from 0. Default = None (no masking).
+    lc_idx    - int, index of lightcurve (0 if single lightcurve fit)
+    save_fig  - True/False: save the outputted transmission spectrum or not? Default=False
+    plot_fig  - True/False: plot the outputted transmission spectrum or not? If False, code returns numpy arrays of Rp/Rs and errors. Default=True
+    bin_mask  - set to a list of integers to mask certain wavelength bins from the transmission spectrum if desired. Indexed from 0. Default = None (no masking).
     save_to_tab - True/False: if True, saves transmission spectrum to .dat text file. Default=False
     iib - True/False: - If this is an iib fit to Na or K then plot the transmission spectrum with wvl_error on x-axis.
     plot_depths - True/False: - Use this to plot in transit depth rather than Rp/Rs. Default=False (Rp/Rs).
@@ -640,7 +642,7 @@ def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mas
     input_dict = parseInput('./fitting_input.txt')
 
     # load in data
-    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask,lc_idx)
+    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask,lc_idx=lc_idx)
 
     rp = []
     rp_up = []
