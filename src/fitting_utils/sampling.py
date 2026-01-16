@@ -212,6 +212,7 @@ class Sampling(object):
         else:
             p0 = [starting_values + 1e-8*np.random.randn(npars) for j in range(nwalkers_total)]
 
+        print(self.param_list_free)
          # intiate emcee sampler object
         if npars > 1:
             sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,args=[self.param_list_free],threads=nthreads)
