@@ -608,7 +608,7 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
         diagnostic_tab.write("Individual light curve statistics:\n")
 
     for ilc,lc in enumerate(sampling_model.lightcurve_list):
-        diagnostic_tab.write('Residual RMS (ppm) = %d \n' % fitted_rms[f'lc{ilc}'])
+        diagnostic_tab.write('Residual RMS (ppm) = %d \n' % (fitted_rms[f'lc{ilc}']*1e6))
         
 
     if emcee_sampler is not None:
