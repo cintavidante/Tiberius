@@ -76,10 +76,9 @@ class LightcurveModel(object):
                 self.prior_dict[param_names[i]+'_1'] = file['prior_1'][i]
                 self.prior_dict[param_names[i]+'_2'] = file['prior_2'][i]
                 self.prior_dict[param_names[i]+'_prior'] = file['prior_type'][i]
-                self.npars += 1 # number of free parameters for this light curve - will need to edit down the road in the joint fitting
+                self.npars += 1 # number of free parameters for this particular light curve (not for joint fit - see joint_fitting.py)
             else:
                 print('something is wrong with your prior file')
-    
 
         # initialise models
         self.transit_model_package = fit_models['transit_model']
