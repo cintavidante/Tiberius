@@ -357,7 +357,7 @@ if sampling_method == 'emcee':
         _time = lightcurve_objects[i].time_array
         _flux = lightcurve_objects[i].flux_array
         _flux_error = lightcurve_objects[i].flux_err
-        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
     #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
 
 elif sampling_method == 'dynesty':
