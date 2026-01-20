@@ -388,7 +388,6 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
             tc = model.param_dict['t0'].currVal
         except:
             tc = model.param_dict['t0']
-
     fig = plt.figure()
 
     if deconstruct:
