@@ -139,7 +139,6 @@ class Sampling(object):
             if theta is not None:
                 lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
                 lc.update_model(lc_theta)
-                #print(ilc,lc_theta)
             residuals  = lc.calc_residuals()
             flux_error = lc.return_flux_err()
             N = len(residuals)
@@ -174,7 +173,7 @@ class Sampling(object):
         for i,(pos, prob, state) in enumerate(sampler.sample(p0,iterations=nsteps,store=True)):
             n = int((width+1) * float(i) / nsteps)
             sys.stdout.write("\r[{0}{1}]".format('#' * n, ' ' * (width - n))) # for progress bar
-
+            
             if np.max(prob) > highest_prob:
                 highest_prob_pars = pos[np.argmax(prob)]
                 highest_prob = np.max(prob)
@@ -303,8 +302,6 @@ class Sampling(object):
         for ilc,lc in enumerate(self.lightcurve_list):
             lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
             lc.update_model(lc_theta)
-            print('#####',lc.transit_model.param_dict['t0'].currVal)
-
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
         if not burn:
