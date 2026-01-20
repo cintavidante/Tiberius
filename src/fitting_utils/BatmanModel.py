@@ -55,7 +55,7 @@ class BatmanModel(object):
             u2 = np.sqrt(self.param_dict['u1'].currVal)*(1-2*self.param_dict['u2'].currVal)
             self.batman_params.limb_dark = 'quadratic'
             self.batman_params.u = [u1, u2]
-        print(self.batman_params)
+        
         self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1)    #initializes model
 
     def update_model(self, new_param_dict):
@@ -80,8 +80,8 @@ class BatmanModel(object):
             u1 = 2*np.sqrt(self.param_dict['u1'].currVal)*self.param_dict['u2'].currVal
             u2 = np.sqrt(self.param_dict['u1'].currVal)*(1-2*self.param_dict['u2'].currVal)
             self.batman_params.u = [u1, u2]
-
         self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1)    #initializes model
+        
         return
 
     def calc(self,time_array=None, overwrite=False):

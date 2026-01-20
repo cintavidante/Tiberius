@@ -93,11 +93,21 @@ class JointFitter(object):
         lc_param_list = []
 
         for i, param_name in enumerate(global_param_list):
-            # first the joint parameters 
             if param_name in self.joint_param_names:
                 lc_theta.append(global_theta[i])
                 lc_param_list.append(param_name)
             elif f'_lc{lc_idx}' in param_name:
                 lc_theta.append(global_theta[i])
                 lc_param_list.append(re.sub(f'_lc{lc_idx}','',param_name)) # remove lc label
-        return lc_theta,lc_param_list
+        # reorder hack 
+        re_theta  = []
+        re_list   = []
+        orig_order = ['per','rp','t0','a','inc','w','ecc','c1','c2']
+        for i in range(len(orig_order)):
+            if orig_order[i] in lc_param_list:
+                ii = lc_param_list.index(orig_order[i])
+                #print(ii)
+                re_theta.append(lc_theta[ii])
+                re_list.append(lc_param_list[ii])
+        
+        return re_theta,re_list
