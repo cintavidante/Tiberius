@@ -30,10 +30,6 @@ wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
 wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
-if nlc>1:
-    joint_fit = True
-else:
-    joint_fit = False
 
 # check all files provided 
 time_list   = np.array([str(i) for i in input_dict['time_file'].split(',')])
@@ -71,6 +67,7 @@ os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
 def construct_lightcurves(ilightcurve,wb):
     print(f"Construct light curve {ilightcurve+1}..")
 
+    ### isn't this obsolete apart from defining white_light_fit?
     try:
         wavelength_centres = float(wvl_centres_list[ilightcurve])
         wvl_bin_full_width = float(wvl_bin_full_width_list[ilightcurve])
@@ -80,6 +77,7 @@ def construct_lightcurves(ilightcurve,wb):
         wvl_bin_full_width = pickle.load(open(wvl_bin_full_width_list[ilightcurve],'rb'))
         white_light_fit = False
         nbins = len(wavelength_centres)
+    ###
 
     if white_light_fit and wb > 1:
         raise ValueError('if fitting wavelength bins, need to have a wavelength array in fitting_input.txt')

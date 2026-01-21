@@ -544,7 +544,7 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
         if rebin_data is None:
             # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
-            plt.savefig(f'fitted_model_lc{lc_idx}_{wb}.png',bbox_inches='tight',dpi=200)
+            plt.savefig(f'fitted_model_lc{lc_idx}{wb}.png',bbox_inches='tight',dpi=200)
         else:
             plt.savefig('fitted_model_lc%s_%s_rebin_%d.png'%(lc_idx,wb,rebin_data),bbox_inches='tight',dpi=200)
 

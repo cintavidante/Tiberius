@@ -20,58 +20,71 @@ class JointFitter(object):
         
         """
 
-        self.lightcurve_list = lightcurve_list
-        self.nlightcurves    = len(lightcurve_list)
-
-        # Collect joint parameters (should be same across lightcurves)
-        self.joint_param_names = self.lightcurve_list[0].param_list_joint.copy()
-        # sanity check
-        for ilc,lc in enumerate(self.lightcurve_list[1:],start=1):
-            if lc.param_list_joint != self.joint_param_names:
-                raise ValueError("Joint parameters don't match across lightcurves:\n"
-                                 f"LC 0: {self.joint_param_names}\n"
-                                 f"LC {ilc}: {self.joint_param_names}\n"
-                                 "Check priors file.")
-        
-        # Build a global parameter list: [joint_params, lc0_params, lc1_params, etc...]
-        self.param_list_global = self.joint_param_names.copy()
+        self.lightcurve_list   = lightcurve_list
+        self.nlightcurves      = len(lightcurve_list)
+        self.joint_param_names = {}
         self.param_dict_global = {}
         self.prior_dict_global = {}
+        
 
-        # Add the joint parameters to dictionaries
-        for param_name in self.joint_param_names:
-            for ilc,lc in enumerate(self.lightcurve_list):
-                if param_name not in lc.param_list_joint:
-                    raise ValueError(f'Parameter {param_name} not defined as joint parameter in all lightcurves in this list. Check prior.txt files.')
-                else:
-                    if param_name not in self.param_dict_global:
-                        # Add to the dictionary
-                        self.param_dict_global[param_name]          = lc.param_dict[param_name]
-                        self.prior_dict_global[param_name+'_1']     = lc.prior_dict[param_name+'_1']
-                        self.prior_dict_global[param_name+'_2']     = lc.prior_dict[param_name+'_2']
-                        self.prior_dict_global[param_name+'_prior'] = lc.prior_dict[param_name+'_prior']
-                    #else: need to add a sanity check that the definitions are the same across datasets (in prior.txt)
-                
-        # Add the individual free parameters
-        for ilc,lc in enumerate(self.lightcurve_list):
-            for param_name in lc.param_list_free:
-                if param_name not in self.joint_param_names:
-                    self.param_list_global.append(f"{param_name}_lc{ilc}") # Update the list of free parameter names e.g. rp_lc0, rp_lc1
-                    self.param_dict_global[f"{param_name}_lc{ilc}"]       = lc.param_dict[param_name] # Update the global parameter dictionary (with values)
-                    self.prior_dict_global[f"{param_name}_lc{ilc}_1"]     = lc.prior_dict[param_name+'_1']
-                    self.prior_dict_global[f"{param_name}_lc{ilc}_2"]     = lc.prior_dict[param_name+'_2']
-                    self.prior_dict_global[f"{param_name}_lc{ilc}_prior"] = lc.prior_dict[param_name+'_prior']
+        if self.nlightcurves>1:
 
-        self.npars  = len(self.param_list_global)
-        self.njoint = len(self.joint_param_names)
-
-        if verbose:
-            print(f"Jointly fitting {self.njoint} parameter across {self.nlightcurves} lightcurves.")
-            print(f"Total free parameters: {self.npars}.")
-            print(f"Joint parameters: {self.joint_param_names}.")
-            print(f"Full global parameter list: {self.param_list_global}.")
-
+            # Collect joint parameters (should be same across lightcurves)
+            self.joint_param_names = self.lightcurve_list[0].param_list_joint.copy()
+            # sanity check
+            for ilc,lc in enumerate(self.lightcurve_list[1:],start=1):
+                if lc.param_list_joint != self.joint_param_names:
+                    raise ValueError("Joint parameters don't match across lightcurves:\n"
+                                    f"LC 0: {self.joint_param_names}\n"
+                                    f"LC {ilc}: {self.joint_param_names}\n"
+                                    "Check priors file.")
             
+            # Build a global parameter list: [joint_params, lc0_params, lc1_params, etc...]
+            self.param_list_global = self.joint_param_names.copy()
+            
+
+            # Add the joint parameters to dictionaries
+            for param_name in self.joint_param_names:
+                for ilc,lc in enumerate(self.lightcurve_list):
+                    if param_name not in lc.param_list_joint:
+                        raise ValueError(f'Parameter {param_name} not defined as joint parameter in all lightcurves in this list. Check prior.txt files.')
+                    else:
+                        if param_name not in self.param_dict_global:
+                            # Add to the dictionary
+                            self.param_dict_global[param_name]          = lc.param_dict[param_name]
+                            self.prior_dict_global[param_name+'_1']     = lc.prior_dict[param_name+'_1']
+                            self.prior_dict_global[param_name+'_2']     = lc.prior_dict[param_name+'_2']
+                            self.prior_dict_global[param_name+'_prior'] = lc.prior_dict[param_name+'_prior']
+                        #else: need to add a sanity check that the definitions are the same across datasets (in prior.txt)
+                    
+            # Add the individual free parameters
+            for ilc,lc in enumerate(self.lightcurve_list):
+                for param_name in lc.param_list_free:
+                    if param_name not in self.joint_param_names:
+                        self.param_list_global.append(f"{param_name}_lc{ilc}") # Update the list of free parameter names e.g. rp_lc0, rp_lc1
+                        self.param_dict_global[f"{param_name}_lc{ilc}"]       = lc.param_dict[param_name] # Update the global parameter dictionary (with values)
+                        self.prior_dict_global[f"{param_name}_lc{ilc}_1"]     = lc.prior_dict[param_name+'_1']
+                        self.prior_dict_global[f"{param_name}_lc{ilc}_2"]     = lc.prior_dict[param_name+'_2']
+                        self.prior_dict_global[f"{param_name}_lc{ilc}_prior"] = lc.prior_dict[param_name+'_prior']
+
+            self.npars  = len(self.param_list_global)
+            self.njoint = len(self.joint_param_names)
+
+            if verbose:
+                print(f"Jointly fitting {self.njoint} parameter across {self.nlightcurves} lightcurves.")
+                print(f"Total free parameters: {self.npars}.")
+                print(f"Joint parameters: {self.joint_param_names}.")
+                print(f"Full global parameter list: {self.param_list_global}.")
+        else:
+            self.param_list_global = self.lightcurve_list[0].param_list_free.copy()
+            self.param_dict_global = self.lightcurve_list[0].param_dict.copy()
+            self.prior_dict_global = self.lightcurve_list[0].prior_dict.copy()
+            self.npars             = len(self.param_list_global)
+            if verbose:
+                print(f"Fitting {self.nlightcurves} lightcurve.")
+                print(f"Total free parameters: {self.npars}.")
+                print(f"Full global parameter list: {self.param_list_global}.")
+
 
     def map_theta(self,global_theta,lc_idx,global_param_list):
 

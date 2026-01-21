@@ -41,17 +41,9 @@ class Sampling(object):
         self.sampling_method = sampling_method
         self.sampling_arguments = sampling_arguments
 
-        if len(lightcurve_list)>1:
-            if sampling_method!='emcee':
-                raise NotImplementedError("Only written for emcee at the moment.")
-
-            self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
-
-            self.param_dict      = self.joint_fitter.param_dict_global
-            self.prior_dict      = self.joint_fitter.prior_dict_global
-            self.param_list_free = self.joint_fitter.param_list_global
-        
-        else:
+        #if len(lightcurve_list)>1:
+        if sampling_method!='emcee':
+            #raise NotImplementedError("Only written for emcee at the moment.")
             self.lightcurve = lightcurve_list[0]
             # Evie's original
 
@@ -62,6 +54,14 @@ class Sampling(object):
 
             if self.sampling_method == 'dynesty':
                 self.nDims = len( self.param_list_free)
+        else:
+
+            self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
+
+            self.param_dict      = self.joint_fitter.param_dict_global
+            self.prior_dict      = self.joint_fitter.prior_dict_global
+            self.param_list_free = self.joint_fitter.param_list_global
+        
 
     # -------------------- Dynesty methods -------------------- #
     def prior_setup(self, x):
@@ -137,7 +137,10 @@ class Sampling(object):
         logL_total   = 0.0
         for ilc, lc in enumerate(self.lightcurve_list):
             if theta is not None:
-                lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                if len(self.lightcurve_list)>1:
+                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                else:
+                    lc_theta = theta
                 lc.update_model(lc_theta)
             residuals  = lc.calc_residuals()
             flux_error = lc.return_flux_err()
@@ -300,7 +303,10 @@ class Sampling(object):
             pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
 
         for ilc,lc in enumerate(self.lightcurve_list):
-            lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
+            if len(self.lightcurve_list)>1:
+                lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
+            else:
+                lc_theta = med
             lc.update_model(lc_theta)
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
@@ -411,7 +417,10 @@ class Sampling(object):
         if theta is not None:
             for ilc, lc in enumerate(self.lightcurve_list):
                 if theta is not None:
-                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    if len(self.lightcurve_list)>1:
+                        lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    else:
+                        lc_theta = theta
                     lc.update_model(lc_theta)
 
 
@@ -458,7 +467,10 @@ class Sampling(object):
         if theta is not None:
             for ilc, lc in enumerate(self.lightcurve_list):
                 if theta is not None:
-                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    if len(self.lightcurve_list)>1:
+                        lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                    else:
+                        lc_theta = theta 
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
