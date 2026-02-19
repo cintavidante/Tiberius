@@ -41,8 +41,15 @@ class Sampling(object):
         self.sampling_method = sampling_method
         self.sampling_arguments = sampling_arguments
 
-        #if len(lightcurve_list)>1:
-        if sampling_method!='emcee':
+        if sampling_method=='emcee' or sampling_method=='LM':
+            # Only written for emcee and LM at the moment
+            self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
+
+            self.param_dict      = self.joint_fitter.param_dict_global
+            self.prior_dict      = self.joint_fitter.prior_dict_global
+            self.param_list_free = self.joint_fitter.param_list_global
+
+        else:
             #raise NotImplementedError("Only written for emcee at the moment.")
             self.lightcurve = lightcurve_list[0]
             # Evie's original
@@ -54,13 +61,8 @@ class Sampling(object):
 
             if self.sampling_method == 'dynesty':
                 self.nDims = len( self.param_list_free)
-        else:
 
-            self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
-
-            self.param_dict      = self.joint_fitter.param_dict_global
-            self.prior_dict      = self.joint_fitter.prior_dict_global
-            self.param_list_free = self.joint_fitter.param_list_global
+            
         
 
     # -------------------- Dynesty methods -------------------- #
@@ -200,10 +202,10 @@ class Sampling(object):
     def run_emcee(self, burn=False, save_chain=True, wavelength_bin=0):
 
         """Run emcee MCMC sampling."""
-        nsteps = self.sampling_arguments['nsteps']
+        nsteps   = self.sampling_arguments['nsteps']
         nwalkers = self.sampling_arguments['nwalkers']
         nthreads = self.sampling_arguments['nthreads']
-        npars = len(self.param_list_free)
+        npars    = len(self.param_list_free)
         namelist = self.param_list_free
         nwalkers_total = nwalkers * npars
 
@@ -312,7 +314,7 @@ class Sampling(object):
 
         if not burn:
             for ilc,lc in enumerate(self.lightcurve_list):
-                pickle.dump(lc,open(f'fitted_lightcurve{ilc}_model_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
+                pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
 
         if burn:
             print("...burn-in complete for bin %d"%(wavelength_bin+1))
@@ -334,21 +336,36 @@ class Sampling(object):
 
         # Define residual function
         def residuals(theta):
-
-            self.lightcurve.update_model(theta)
-
+            # Check prior once before updating lightcurves
             prior_val = self.logprior_emcee(theta)
-
             if not np.isfinite(prior_val):
-                return np.ones_like(self.lightcurve.flux_array)*np.inf
+                return np.ones(sum(len(lc.flux_array) for lc in self.lightcurve_list))*np.inf
 
-            return self.lightcurve.calc_residuals()/self.lightcurve.flux_err
+            # Update all lightcurves and collect residuals
+            all_residuals = []
+            for ilc, lc in enumerate(self.lightcurve_list):
+                if theta is not None:
+                    if len(self.lightcurve_list)>1:
+                        lc_theta, lc_param_list = self.joint_fitter.map_theta(theta, ilc, self.param_list_free)
+                    else:
+                        lc_theta = theta
+                    lc.update_model(lc_theta)
+
+                lc_residuals = lc.calc_residuals() / lc.flux_err
+                all_residuals.append(lc_residuals)
+
+            return np.concatenate(all_residuals)
 
         # Run Levenberg-Marquardt fit
         result = optimize.least_squares(residuals, theta0, method='lm')
 
-        # Update model with best-fit parameters
-        self.lightcurve.update_model(result.x)
+        # Update model with best-fit parameters for all lightcurves
+        for ilc, lc in enumerate(self.lightcurve_list):
+            if len(self.lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(result.x, ilc, self.param_list_free)
+            else:
+                lc_theta = result.x
+            lc.update_model(lc_theta)
 
         # Estimate uncertainties from covariance matrix
         try:
@@ -360,9 +377,12 @@ class Sampling(object):
             uncertainties = np.zeros_like(result.x)
 
         write_fit_diagnostics(self,wavelength_bin,LM_fit=True)
-        save_LM_results(self.lightcurve,result.x,uncertainties,wavelength_bin,verbose=True)
+        
+        # Save results for each lightcurve
+        for ilc, lc in enumerate(self.lightcurve_list):
+            save_LM_results(lc, result.x, uncertainties, wavelength_bin, verbose=True)
 
-        return self.lightcurve
+        return self.lightcurve_list
 
 
     def build_bounds(self, full_model=False):
@@ -562,9 +582,9 @@ def save_LM_results(fitted_lightcurve,param_medians,param_uncertainties,bin_numb
 def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=False,LM_fit=False,emcee_sampler=None,nsteps=None):
 
     if wavelength_bin == 0:
-        read_mode = 'a'
-    else:
         read_mode = 'w'
+    else:
+        read_mode = 'a'
 
     if emcee_fit:
 
