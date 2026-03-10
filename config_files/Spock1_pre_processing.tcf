@@ -5,35 +5,25 @@
 #############################
 ### Pipeline Stages
 
-skip_bias                             False
-skip_flats_bad_pixel_mask             False
-skip_cosmics                          False
-
+skip_flats_bad_pixel_mask             True
+skip_cosmics                          True
 
 #############################
 ### Bias
 
-bias_list                             ./Spock0_calib_output/BIAS_Free_27arcsec_list
-bias_savefits                         True 
-bias_showfig                          True                       
-bias_savefig                          True
-bias_eyeball                          False
+bias_list                             BIAS_Free_27arcsec_list
+bias_selection_mode                   False
 
 
 #############################
 ### Flats and Bad-Pixel-Mask
 
-flat_list                             ./Spock0_calib_output/FLAT_Gr11_27arcsec_list
-flat_savefits                         True
-flat_showfig                          True
-flat_savefig                          True
+flat_list                             FLAT_Gr11_27arcsec_list
 flat_saturation_limit                 60000
-flat_box_width                        9
+flat_median_box_width                 9                           # Add this as input and when given then take this value, otherwise plot the test
+flat_gaussian_sigma                   1                           # usually test these values EFOSC2:0.4, ACAM:1
 
 bad_pixel_mask                        True
-bad_pixel_mask_savefits               True
-bad_pixel_mask_showfig                True
-bad_pixel_mask_savefig                True
 bad_pixel_mask_medianfilter_cutoff    5
 
 
@@ -48,9 +38,6 @@ locate_cosmics_list           path/to/file
 locate_cosmics_pixelclip      8
 locate_cosmics_verbose        True
 locate_cosmics_review         True                    # To make it interactive
-
-# Bad-Pixel-Mask
-# Under construction
 
 # Directories relative to project_directory
 inputdir_Spock1               Spock0_calib_output

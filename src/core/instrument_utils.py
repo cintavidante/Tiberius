@@ -2,10 +2,10 @@ from astropy.io import fits
 
 def get_fits_image_extensions_from_config(instr_cfg, filename):
     rule_block = instr_cfg.image_extension
-    rule = rule_block["rule"]
+    rule = rule_block.rule
 
     if rule == "explicit":
-        return rule_block["list"]
+        return rule_block.list
     
     # This logic is for ACAM data: HDU0 = primary, windows start at HDU1
     elif rule == "nwin_map":
@@ -14,10 +14,10 @@ def get_fits_image_extensions_from_config(instr_cfg, filename):
 
         nwin = n_hdus - 1
 
-        if nwin not in rule_block["map"]:
+        if nwin not in rule_block.map:
             raise ValueError(f"nwin={nwin} not in the map for instruments={instr_cfg.name}")
         
-        return rule_block["map"][nwin]
+        return rule_block.map[nwin]
     
     else:
         raise ValueError(f"Unknown rule {rule}")

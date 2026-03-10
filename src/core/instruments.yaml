@@ -4,7 +4,7 @@
 #####################################################################
 
 
-ACAM:
+WHT_ACAM:
   observatory: ground
   image_extension:
     rule: nwin_map
@@ -30,7 +30,7 @@ ACAM:
   W3: 2.0
   h0: 8000
 
-EFOSC2:
+NTT_EFOSC2:
   observatory: ground
   image_extension:
     rule: explicit
@@ -50,7 +50,7 @@ EFOSC2:
   W3: 2.0
   h0: 8000
 
-KECK:
+KECK_NIRSPEC:
   observatory: ground
   image_extension:
     rule: explicit

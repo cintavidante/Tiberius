@@ -3,14 +3,24 @@
 #################################################################################
 
 
-# Instrument used: Choose between "JWST", "EFOSC2", "ACAM" and "KECK"
-instrument                 EFOSC2
+# Instrument used: Choose between "JWST_NIRSPEC", "JWST_NIRCAM", "JWST_NIRISS", "NTT_EFOSC2", "WHT_ACAM" and "KECK_NIRSPEC"
+telescope                  WHT
+instrument                 ACAM
 
-# Project Folder
-project_dir                "."
-project_name               WASP_96
+# File system format
+input_format               fit
+storage_format             zarr
 
+# Project Name
+project_name               planet_name
+project_data               date
 
 # Directories relative to project_directory
-inputdir_Spock0            input_folder
-outputdir_Spock0           Spock0_calib_output
+inputdir_Spock0            input_folder_try
+outputdir_Spock0           Spock0_calib_output_try
+
+# Part relevant for ACAM
+position_1                 3
+window_1                   [250:570,1100:3100]
+position_2                 4
+window_2                   [1425:1745,1100:3100]
