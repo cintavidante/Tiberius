@@ -287,7 +287,7 @@ if model_inputs['transit_model']['use_generated_ld_as_prior'] or model_inputs['t
     except:
         raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
 
-    if str(input_dict["LDCs_package"]) == "exotic-ld":
+    if str(input_dict["LDCs_package"]) == "exotic-ld" and model_inputs['transit_model']['use_generated_ld_as_prior']:
         raise SystemError("Can't have use_generated_ld_as_prior = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
 
 prior_file = str(input_dict['prior_filename'])
