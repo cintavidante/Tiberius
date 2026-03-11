@@ -278,8 +278,9 @@ if GP_used:
 model_inputs['transit_model'] = {}
 model_inputs['transit_model']['use_kipping'] = bool(int(input_dict['use_kipping_parameterisation']))
 model_inputs['transit_model']['ld_law'] = str(input_dict['ld_law'])
-model_inputs['transit_model']['use_generated_ld_uncertainties'] = bool(int(input_dict['use_generated_ld_uncertainties']))
-if model_inputs['transit_model']['use_generated_ld_uncertainties']:
+model_inputs['transit_model']['use_generated_ld_as_prior'] = bool(int(input_dict['use_generated_ld_as_prior']))
+model_inputs['transit_model']['use_generated_ld'] = bool(int(input_dict['use_generated_ld']))
+if model_inputs['transit_model']['use_generated_ld_as_prior'] or model_inputs['transit_model']['use_generated_ld']:
     try:
         model_inputs['transit_model']['LDCs_generated'] = np.loadtxt('LD_coefficients.txt',unpack=True)
 
@@ -287,7 +288,7 @@ if model_inputs['transit_model']['use_generated_ld_uncertainties']:
         raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
 
     if str(input_dict["LDCs_package"]) == "exotic-ld":
-        raise SystemError("Can't have use_generated_ld_uncertainties = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
+        raise SystemError("Can't have use_generated_ld_as_prior = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
 
 prior_file = str(input_dict['prior_filename'])
 

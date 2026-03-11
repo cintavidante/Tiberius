@@ -37,7 +37,8 @@ FeH = 			# Fe/H of star
 FeH_err = 		# error in Fe/H of star
 
 # for fitting the Limb-darkening
-use_generated_ld_uncertainties = 1 # do you want to use the unertainties from the generated LDCs? Set to 1 (on) or 0 (off).
+use_generated_ld = 1 # do you want to use the generated LDCs values for the limb-darkening? Set to 1 (on) or 0 (off). If limb-darkening values are set to 'fixed' and this is set to 1, then the generated LDCs will be used as fixed values for the fits.
+use_generated_ld_as_prior = 1 # do you want to use the values and their uncertainties from the generated LDCs as a Gaussian prior? Set to 1 (on) or 0 (off). Note that this will overwrite the prior information in the prior file. 
 ld_uncertainty_multiplier = 3 	# If wanting to inflate the error bars on the LDCs from the generated LDCs, set this to a factor. e.g. setting to 3, inflates errors by a factor of 3. Only used if use_generated_ld_uncertainties = 1.
 use_kipping_parameterisation = 0	# Use if wanting to use Kipping's change of variables for efficient sampling of LDCs. NOTE: NOT FULLY TESTED. Set to 1 (on) or 0 (off).
 
