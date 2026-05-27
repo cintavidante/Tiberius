@@ -389,12 +389,17 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
 
     # figure out whether it's a white light curve
     try:
-        tc = model.t0.currVal
+        tc = model.param_dict['t_secondary'].currVal
+        model_name = 'eclipse'
     except:
+        tc = model.param_dict['t_secondary']
+        model_name = 'eclipse'
         try:
             tc = model.param_dict['t0'].currVal
+            model_name = 'transit'
         except:
             tc = model.param_dict['t0']
+            model_name = False
 
     fig = plt.figure()
 
@@ -459,18 +464,18 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
 
 
     if gp:
-        ax1.plot(hours,mu+model_y,color='r',zorder=10,label='GP & transit model')
+        ax1.plot(hours,mu+model_y,color='r',zorder=10,label='GP & %s model'%model_name)
         ax1.plot(hours,mu+1,color='g',label='GP')
-        ax1.plot(hours,model_y,color='0.75',ls='--',zorder=9,label='Transit model')
+        ax1.plot(hours,model_y,color='0.75',ls='--',zorder=9,label='%s model'%model_name)
         NCOL = 1
 
     if gp:
         ax1.legend(ncol=NCOL,fontsize=6)
 
     if poly and not gp or exp and not gp:
-        ax1.plot(hours,model_y,color='r',zorder=10,label='Systematics & transit model',lw=1)
+        ax1.plot(hours,model_y,color='r',zorder=10,label='Systematics & %s model'%model_name,lw=1)
         ax1.plot(hours,oot,color='g',label='Systematics model',lw=1)
-        ax1.plot(hours,model_y/oot,color='0.75',ls='--',zorder=9,label='Transit model',lw=1)
+        ax1.plot(hours,model_y/oot,color='0.75',ls='--',zorder=9,label='%s model'%model_name,lw=1)
         NCOL = 1
         ax1.legend(ncol=NCOL,fontsize=6)
 
@@ -539,7 +544,7 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
                     color="k", alpha=0.2)
 
     ax2.set_ylabel('Residuals (ppm)')
-    ax2.set_xlabel('Time from mid-transit (hours)')
+    ax2.set_xlabel('Time from mid-%s (hours)'%model_name)
     ax2.tick_params(bottom=True,top=True,left=True,right=True,direction="inout")
     ax2.tick_params(which='minor',bottom=True,top=True,left=True,right=True,direction="inout")#,labelsize=fontsize-4,length=4,width=1.)
 
