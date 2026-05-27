@@ -5,6 +5,8 @@ per      fixed    3.75209956     3.0     0.1     N     # orbital period in days
 rp       free    0.155      0.155     0.001     N      # Rp/Rs
 # rp2      fixed    0.1      0.1     0.01     N      # Rp/Rs for second half if using catwoman
 # phi      fixed    90      88      90      U     # angle of half circles with regards to the orbital plane
+# fp     free    0.001     0.001     0.001     N      # for secondary eclipse, planet-to-star flux ratio
+# t_secondary free    0.15      0.155     0.001     N      # for secondary eclipse, central eclipse time
 t0       free    0.17     0.17     0.001     N      # mid-transit time
 a        free    7.30     7.30     0.01     N      # a/Rs 
 inc      free    85.7     85.7     0.01     N     # inclination in degrees
