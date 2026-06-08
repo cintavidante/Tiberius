@@ -67,7 +67,6 @@ os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
 def construct_lightcurves(ilightcurve,wb):
     print(f"Construct light curve {ilightcurve+1}..")
 
-    ### isn't this obsolete apart from defining white_light_fit?
     try:
         wavelength_centres = float(wvl_centres_list[ilightcurve])
         wvl_bin_full_width = float(wvl_bin_full_width_list[ilightcurve])
@@ -293,15 +292,24 @@ def construct_lightcurves(ilightcurve,wb):
     model_inputs['transit_model']['use_kipping'] = bool(int(input_dict['use_kipping_parameterisation']))
     model_inputs['transit_model']['ld_law'] = str(input_dict['ld_law'])
     model_inputs['transit_model']['use_generated_ld_uncertainties'] = bool(int(input_dict['use_generated_ld_uncertainties']))
-    if model_inputs['transit_model']['use_generated_ld_uncertainties']:
+    if model_inputs['transit_model']['use_generated_ld_uncertainties'] and str(input_dict["LDCs_package"]) == "exotic-ld":
+        raise SystemError("Can't have use_generated_ld_uncertainties = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
+    if model_inputs['transit_model']['use_generated_ld_uncertainties'] or not white_light_fit:
         try:
-            model_inputs['transit_model']['LDCs_generated'] = np.loadtxt(f'LD_coefficients_{ilightcurve}.txt',unpack=True)
+            wc,we,u1,u1_err,u2,u2_err,u3,u3_err,u4,u4_err = np.loadtxt(f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
+            # Extract coefficients for the specific wavelength bin
+            u1 = np.atleast_1d(u1)[wb]
+            u1_err = np.atleast_1d(u1_err)[wb]
+            u2 = np.atleast_1d(u2)[wb]
+            u2_err = np.atleast_1d(u2_err)[wb]
+            u3 = np.atleast_1d(u3)[wb]
+            u3_err = np.atleast_1d(u3_err)[wb]
+            u4 = np.atleast_1d(u4)[wb]
+            u4_err = np.atleast_1d(u4_err)[wb]
+            model_inputs['transit_model']['LDCs_generated'] = (wc, we, u1, u1_err, u2, u2_err, u3, u3_err, u4, u4_err)
 
         except:
             raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
-
-        if str(input_dict["LDCs_package"]) == "exotic-ld":
-            raise SystemError("Can't have use_generated_ld_uncertainties = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
 
     prior_file = str(prior_file_list[ilightcurve])
 
@@ -317,7 +325,6 @@ def construct_lightcurves(ilightcurve,wb):
 lightcurve_objects = []
 for i in range(nlc):
     lightcurve_objects.append(construct_lightcurves(i,wb))
-
 
 
 # sampling controls
@@ -349,13 +356,13 @@ elif sampling_method == 'dynesty':
 sampling = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
 
 if sampling_method == 'emcee':
-
     fitted_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
     for i in range(nlc):
         _time = lightcurve_objects[i].time_array
         _flux = lightcurve_objects[i].flux_array
         _flux_error = lightcurve_objects[i].flux_err
         fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+        print(fitted_lightcurve_list[i].transit_model.batman_params.u)
     #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
 
 elif sampling_method == 'dynesty':
@@ -363,28 +370,31 @@ elif sampling_method == 'dynesty':
 
 elif sampling_method == 'LM':
 
-    fitted_lightcurve = sampling.run_LM(wavelength_bin=wb)
+    fitted_lightcurve_list = sampling.run_LM(wavelength_bin=wb)
 
-    if 'infl' not in fitted_lightcurve.param_list_free:
+    if 'infl' not in lightcurve_objects[0].param_list_free:
         # we need to rescale the photometric uncertainties to give reduced chi2 = 1
-        rescaling_factor = np.sqrt(sampling.reducedChisq())
+        rescaling_factor = np.sqrt(sampling.reducedChisq()['total'])
         print("\nRescaling photometric uncertainties by %.3f to give rChi2 = 1"%rescaling_factor)
-        flux_error *= rescaling_factor
+        
+        # Update error arrays for each lightcurve
+        for ilc in range(nlc):
+            lightcurve_objects[ilc].flux_err *= rescaling_factor
+            pickle.dump(lightcurve_objects[ilc].flux_err,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_lc{}_wb{}.pickle'.format(str(ilc),str(wb+1).zfill(4)),'wb'))
 
-        fitted_lightcurve.flux_err = flux_error
 
-        sampling_run2 = s.Sampling(fitted_lightcurve,sampling_arguments,sampling_method)
-        fitted_lightcurve = sampling_run2.run_LM(wavelength_bin=wb)
+        sampling_run2 = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
+        fitted_lightcurve_list = sampling_run2.run_LM(wavelength_bin=wb)
 
         rchi2_rescaled = sampling_run2.reducedChisq()
-        print("reduced Chi2 following error rescaling = %.2f"%(rchi2_rescaled))
-        pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
-
-    fig = pu.plot_single_model(fitted_lightcurve,time,flux,flux_error,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
-
-    # save the results
-    # s.save_LM_results(fitted_lightcurve, param_medians, param_uncertainties,wb+1,verbose=True)
-    pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
+        print("reduced Chi2 following error rescaling = %.2f"%(rchi2_rescaled['total']))
+        
+    for i in range(nlc):
+        _time = lightcurve_objects[i].time_array
+        _flux = lightcurve_objects[i].flux_array
+        _flux_error = lightcurve_objects[i].flux_err
+        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+        pickle.dump(fitted_lightcurve_list[i],open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_lc{}_wb{}.pickle'.format(str(i),str(wb+1).zfill(4)),'wb'))
 
 # comment out for the moment
 #if white_light_fit:

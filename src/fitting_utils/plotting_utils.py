@@ -974,7 +974,7 @@ def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=N
     Returns:
     Nothing, it just plots the figure"""
 
-    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'./LD_coefficients_{lc_idx}.txt',unpack=True)
+    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'./LD_coefficients_lc{lc_idx}.txt',unpack=True)
     wvl_error = wvl_error/2
 
     try:
@@ -982,7 +982,7 @@ def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=N
     except:
         best_dict = parseInput('./best_fit_parameters_GP.txt')
 
-    model_list = glob.glob(f'{directory}/pickled_objects/fitted_lightcurve{lc_idx}_model_*.pickle')
+    model_list = glob.glob(f'{directory}/pickled_objects/fitted_lightcurve_model_lc{lc_idx}*.pickle')
     nbins = len(model_list)
 
     completed_bins = load_completed_bins(directory,return_index_only=True,mask=bin_mask,lc_idx=lc_idx)
@@ -1317,8 +1317,8 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         x,y,e,e_r,m,m_in,w,we,completed_bins,nbins - arrays of time, flux, error, rescaled errors, TransitGPPM models, model input files, wavelength bin centres, wavelength bin widths, the indices of the completed bin fits, the number of bins with completed fits"
     """
 
-    model_files = np.array(sorted(glob.glob(f'{directory}/pickled_objects/fitted_lightcurve{lc_idx}_model_*.pickle')))
-
+    model_files = np.array(sorted(glob.glob(f'{directory}/pickled_objects/fitted_lightcurve_model_lc{lc_idx}_*.pickle')))
+    print(len(model_files), "model files found in directory %s/pickled_objects/ for lightcurve index %d"%(directory,lc_idx))
     # determine the completed bins by finding the XXX number in the "_wbXXX" in the file names
     completed_bins = np.array([int(m.split("wb")[-1].split(".")[0]) for m in model_files])
     if return_index_only:
@@ -1347,7 +1347,7 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         e_r = None
 
     ### Load in LD coefficients table for the wavelength centres and widths of the bins
-    w,we = np.loadtxt(f'./LD_coefficients_{lc_idx}.txt',unpack=True,usecols=[0,1])
+    w,we = np.loadtxt(f'./LD_coefficients_lc{lc_idx}.txt',unpack=True,usecols=[0,1])
     w,we = np.atleast_1d(w)[completed_bins-1],np.atleast_1d(we)[completed_bins-1]
 
     ### Bin mask

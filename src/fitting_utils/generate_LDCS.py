@@ -4,9 +4,13 @@
 import pickle
 import numpy as np
 import argparse
+import os
 from scipy.ndimage import median_filter as MF
 import matplotlib.pyplot as plt
 from global_utils import parseInput
+
+# Get the directory of the current script
+script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
 # Load in conrolling parameter file
@@ -33,14 +37,14 @@ wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 
-for i in range(nlc):
+for ilightcurve in range(nlc):
     try:
-        wavelength_centres = float(wvl_centres_list[i])
-        wvl_bin_full_width = float(wvl_bin_full_width_list[i])
+        wavelength_centres = float(wvl_centres_list[ilightcurve])
+        wvl_bin_full_width = float(wvl_bin_full_width_list[ilightcurve])
         white_light_fit = True
     except:
-        wavelength_centres = pickle.load(open(wvl_centres_list[i],'rb'))
-        wvl_bin_full_width = pickle.load(open(wvl_bin_full_width_list[i],'rb'))
+        wavelength_centres = pickle.load(open(wvl_centres_list[ilightcurve],'rb'))
+        wvl_bin_full_width = pickle.load(open(wvl_bin_full_width_list[ilightcurve],'rb'))
         white_light_fit = False
         nbins = len(wavelength_centres)
 
@@ -171,7 +175,7 @@ for i in range(nlc):
         return coeffs,errors
 
 
-    def exotic_ldcs(stellar_params,instrument_mode,wvl_centre,wvl_error,ld_law,ld_model,ld_data_path):
+    def exotic_ldcs(stellar_params,instrument_mode,wvl_centre,wvl_error,ld_law,ld_model,ld_data_path,wvs=None,throughput=None):
 
         M_H, Teff, logg = stellar_params
 
@@ -189,13 +193,19 @@ for i in range(nlc):
             wavelength_range = [wvl_centre[i]-wvl_error[i]/2,wvl_centre[i]+wvl_error[i]/2]
 
             if ld_law == "linear":
-                c = sld.compute_linear_ld_coeffs(wavelength_range, instrument_mode)
+                c = sld.compute_linear_ld_coeffs(wavelength_range, instrument_mode,
+                                                  custom_wavelengths=wvs,
+                                                  custom_throughput=throughput)
 
             if ld_law == "quadratic":
-                c = sld.compute_quadratic_ld_coeffs(wavelength_range, instrument_mode)
+                c = sld.compute_quadratic_ld_coeffs(wavelength_range, instrument_mode,
+                                                  custom_wavelengths=wvs,
+                                                  custom_throughput=throughput)
 
             if ld_law == "nonlinear":
-                c = sld.compute_4_parameter_non_linear_ld_coeffs(wavelength_range, instrument_mode)
+                c = sld.compute_4_parameter_non_linear_ld_coeffs(wavelength_range, instrument_mode,
+                                                  custom_wavelengths=wvs,
+                                                  custom_throughput=throughput)
 
             coeffs.append(c)
 
@@ -224,7 +234,14 @@ for i in range(nlc):
                 print('....coefficients calculated for bin %d/%d \n'%(i+1,nbins))
 
             if LDCs_package == 'exotic-ld':
-                coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path)
+                try:
+                    coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path)
+                except:
+                    print("Error calculating LDCs with Exo-TIC-LD. This is likely because your wavelength range extends beyond the range of the model. Using custom throughput file for JWST_NIRSpec_G395H.")
+                    wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
+                    wvs *= 1e4 # convert from microns to Angstroms
+                    coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+
                 print('....coefficients calculated for bin %d/%d \n'%(i+1,nbins))
 
             u1.append(coeffs[0][0])
@@ -299,7 +316,14 @@ for i in range(nlc):
         coeffs,errors = return_ld_components(ld_model,ld_law)
     if LDCs_package == 'exotic-ld':
         print('Calculating coefficients...')
-        coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path)
+        try:
+            coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path)
+        except:
+            if instrument_mode=='JWST_NIRSpec_G395H':
+                print("Error calculating LDCs with Exo-TIC-LD. This is likely because your wavelength range extends beyond the range of the model. Using custom throughput file for JWST_NIRSpec_G395H.")
+                wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
+                wvs *= 1e4 # convert from microns to Angstroms
+                coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
 
     u1,u1e = coeffs[:,0],errors[:,0]
     if replace_negatives:
@@ -363,7 +387,7 @@ for i in range(nlc):
 
         return smoothed_u,smoothed_ue
 
-    tab = open('LD_coefficients_{}.txt'.format(i),'w')
+    tab = open('LD_coefficients_lc{}.txt'.format(ilightcurve),'w')
     tab.write('# Teff = %d +/- %.2f K ; log(g) = %.2f +/- %.2f ; FeH = %.2f +/- %.2f ; u error inflation factor = %.1f \n'%(Teff,Teff_err,logg_star,logg_star_err,FeH,FeH_err,error_inflation))
     tab.write('# %s law used \n'%(ld_law))
     if LDCs_package == 'exotic-ld':
@@ -376,7 +400,7 @@ for i in range(nlc):
         tab.write('%f %f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f \n'%(wavelength_centres,wvl_bin_full_width,u1[0],u1e[0],u2[0],u2e[0],u3[0],u3e[0],u4[0],u4e[0]))
     else:
         tab.write("# %d wavelength bins \n"%len(wavelength_centres))
-        smoothed_tab = open('LD_coefficients_smoothed.txt','w')
+        smoothed_tab = open('LD_coefficients_smoothed_lc{}.txt'.format(ilightcurve),'w')
         smoothed_tab.write('# Teff = %d +/- %.2f K ; log(g) = %.2f +/- %.2f ; FeH = %.2f +/- %.2f ; u error inflation factor = %.1f \n'%(Teff,Teff_err,logg_star,logg_star_err,FeH,FeH_err,error_inflation))
         smoothed_tab.write('# %s law used \n'%(ld_law))
         if LDCs_package == 'exotic-ld':
@@ -409,10 +433,10 @@ for i in range(nlc):
         plt.legend()
         plt.xlabel("Wavelength")
         plt.ylabel("Coefficient value")
-        plt.savefig("LD_model_values_{}.png".format(i),bbox_inches="tight",dpi=360)
+        plt.savefig("LD_model_values_lc{}.png".format(ilightcurve),bbox_inches="tight",dpi=360)
         plt.show()
 
 
     ### Pickle LDTk model in case we need it later
     if LDCs_package == 'LDTk':
-        pickle.dump(ld_model,open('ldtk_model_{}.pickle'.format(i),'wb'))
+        pickle.dump(ld_model,open('ldtk_model_lc{}.pickle'.format(ilightcurve),'wb'))

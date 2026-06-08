@@ -1118,6 +1118,9 @@ def extract_all_frame_fluxes(science_list,master_bias,master_flat,trace_dict,win
                 if bad_pixel_mask is not None and cosmic_pixel_mask is not None:
                     pixel_mask = bad_pixel_mask + cosmic_pixel_mask[i]
 
+                # AM edit 13 MAY 2026: add all NaNs to the pixel_mask
+                pixel_mask = pixel_mask + np.isnan(frame[0])
+
                 if verbose != -1 and verbose != 0 and i == 0 or verbose != -1 and verbose != 0 and cosmic_pixel_mask is not None:
                     plt.figure()
                     plt.imshow(pixel_mask, interpolation='none',aspect="auto")
