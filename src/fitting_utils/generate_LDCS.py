@@ -27,6 +27,23 @@ elif LDCs_package == 'exotic-ld':
     ld_data_path = str(input_dict['exotic-ld_data_path'])
     ld_model_dimensionality = str(input_dict['exotic-ld_model_dim'])
     instrument_mode = str(input_dict['exotic-ld_instrument_mode'])
+
+    if input_dict['exotic-ld_throughput'] is not None:
+        try:
+            inst_throughput = str(input_dict['exotic-ld_throughput'])
+            thr_file = pickle.load(open(inst_throughput,'rb'))
+            wvs, throughput = thr_file[0], thr_file[1]
+        except:
+            print('For JWST_NIRSpec_G395H')
+            wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
+            wvs *= 1e4 # convert from microns to Angstroms
+    else:
+        if not any(x in instrument_mode for x in ('JWST', 'HST', 'TESS', 'Spitzer')):
+            raise ValueError('Exotic-LD needs throughput for this instrument')
+        else:
+            inst_throughput = None   
+            wvs = None
+            throughput = None
 else:
     raise ValueError("Only 'LDTk' and 'exotic-ld' are supported for generating limb-darkening from models")
 
@@ -212,7 +229,6 @@ for ilightcurve in range(nlc):
         return np.array(coeffs),np.zeros_like(coeffs)
 
 
-
     if LDCs_package == 'LDTk':
         print('Generating LDTk model...')
 
@@ -235,12 +251,19 @@ for ilightcurve in range(nlc):
 
             if LDCs_package == 'exotic-ld':
                 try:
-                    coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path)
+                    if (throughput is not None) and (wvs is not None):
+                        coeffs, errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+                    else:
+                        coeffs, errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path)
                 except:
-                    print("Error calculating LDCs with Exo-TIC-LD. This is likely because your wavelength range extends beyond the range of the model. Using custom throughput file for JWST_NIRSpec_G395H.")
-                    wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
-                    wvs *= 1e4 # convert from microns to Angstroms
-                    coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+                    if instrument_mode=='JWST_NIRSpec_G395H':
+                        print("Error calculating LDCs with Exo-TIC-LD. This is likely because your wavelength range extends beyond the range of the model. Using custom throughput file for JWST_NIRSpec_G395H.")
+                        wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
+                        wvs *= 1e4 # convert from microns to Angstroms
+                        coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+                    if instrument_mode == 'EFOSC2':
+                        coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres[i],wvl_bin_full_width[i],ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+
 
                 print('....coefficients calculated for bin %d/%d \n'%(i+1,nbins))
 
@@ -317,12 +340,17 @@ for ilightcurve in range(nlc):
     if LDCs_package == 'exotic-ld':
         print('Calculating coefficients...')
         try:
-            coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path)
+            if (throughput is not None) and (wvs is not None):
+                coeffs, errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+            else:
+                coeffs, errors = exotic_ldcs([FeH,Teff,logg_star],instrument_mode,wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path)
         except:
             if instrument_mode=='JWST_NIRSpec_G395H':
                 print("Error calculating LDCs with Exo-TIC-LD. This is likely because your wavelength range extends beyond the range of the model. Using custom throughput file for JWST_NIRSpec_G395H.")
                 wvs, throughput = np.loadtxt(os.path.join(script_dir, 'NIRSpec_G395H_custom_throughput.txt'), delimiter=',',unpack=True, skiprows=1)
                 wvs *= 1e4 # convert from microns to Angstroms
+                coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
+            if instrument_mode == 'EFOSC2':
                 coeffs,errors = exotic_ldcs([FeH,Teff,logg_star],'custom',wavelength_centres,wvl_bin_full_width,ld_law,ld_model_dimensionality,ld_data_path,wvs=wvs,throughput=throughput)
 
     u1,u1e = coeffs[:,0],errors[:,0]

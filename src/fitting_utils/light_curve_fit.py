@@ -37,6 +37,9 @@ flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
 error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
 prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
 model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
+poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
+contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
+contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
 
 if len(flux_list)==len(error_list)==len(time_list)==len(wvl_bin_full_width_list)==nlc:
     print(f"Fitting {nlc} light curves jointly..")
@@ -61,7 +64,6 @@ os.makedirs(output_foldername, exist_ok=True)
 if save_plots:
     os.makedirs(output_foldername + '/Figures', exist_ok=True)
 os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
-
                                             
 
 def construct_lightcurves(ilightcurve,wb):
@@ -159,9 +161,11 @@ def construct_lightcurves(ilightcurve,wb):
     ### Red noise polynomial model parameters
 
     # define the order of each polynomial fitted to each ancillary data set
-    if input_dict['polynomial_orders'] is not None:
+    poly_order = poly_order_list[ilightcurve]
+
+    if poly_order is not None:
         fit_models['systematics_model'].append('polynomial')
-        model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in input_dict['polynomial_orders'].split(',')])
+        model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')])
         model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
         
     # determine whether we're using an exponential ramp model or not
@@ -263,12 +267,10 @@ def construct_lightcurves(ilightcurve,wb):
             GP_model_inputs = np.array(GP_model_inputs)[:,keep_idx].reshape(len(GP_model_inputs),len(np.where(keep_idx == True)[0]))
         pickle.dump(keep_idx,open(output_foldername + '/pickled_objects/' + 'data_quality_flags_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
-
     ### for GP optimisation and variance limits
-    contact1 = int(input_dict['contact1']) - first_integration
-    contact4 = int(input_dict['contact4']) - first_integration
-
-
+    contact1 = int(contact1_list[ilightcurve]) - first_integration
+    contact4 = int(contact4_list[ilightcurve]) - first_integration
+ 
     ## renormalise flux to out-of-transit median?
     if bool(int(input_dict['renorm_flux'])):
         print("re-normalising flux array...")
@@ -325,7 +327,6 @@ def construct_lightcurves(ilightcurve,wb):
 lightcurve_objects = []
 for i in range(nlc):
     lightcurve_objects.append(construct_lightcurves(i,wb))
-
 
 # sampling controls
 sampling_method = str(input_dict['sampling_method'])

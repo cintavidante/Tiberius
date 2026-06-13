@@ -60,7 +60,7 @@ class Sampling(object):
             
 
             if self.sampling_method == 'dynesty':
-                self.nDims = len( self.param_list_free)
+                self.nDims = len(self.param_list_free)
 
             
         
@@ -79,29 +79,43 @@ class Sampling(object):
 
 
 
-    def loglikelihood_dynesty(self,theta):
-        self.lightcurve.update_model(theta)
-        noise = self.lightcurve.return_flux_err()
+    def loglikelihood_dynesty(self,theta,param_list):
 
-        if self.lightcurve.GP_used:
-            model_calc = self.lightcurve.calc(with_GP=False)
-            logL = self.lightcurve.GP_model.lnlike(model_calc,noise)
-            return logL
+        logL_total = 0.0
 
-        else:
-            residuals = self.lightcurve.calc_residuals()
+        for ilc, lc in enumerate(self.lightcurve_list):
 
-            N = len(noise)
-            logL = -N/2. *  np.log(2*np.pi)
-            logL += - np.nansum(np.log(noise)) - np.nansum(residuals**2 / (2 * noise**2))
+            if theta is not None:
+                if len(self.lightcurve_list)>1:
+                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+                else:
+                    lc_theta = theta
+                lc.update_model(lc_theta)
+            
+            flux_error = lc.return_flux_err()
 
-            return logL
+            if self.lightcurve.GP_used:
+                model_calc = lc.calc(with_GP=False)
+                logL = lc.GP_model.lnlike(model_calc,flux_error)
+            else:
+                residuals  = lc.calc_residuals()
+                N = len(residuals)
+                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(flux_error)) - np.sum(residuals**2 / (2*flux_error**2))
+            
+            logL_total += logL
+        
+        return logL_total
 
 
     def run_dynesty(self):
         live_points = self.sampling_arguments['nlive_pdim']
         precision_criterion = self.sampling_arguments['precision_crit']
-        sampler = dynesty.NestedSampler(self.loglikelihood_dynesty, self.prior_setup, self.nDims,nlive=live_points*self.nDims, bootstrap=0) #,sample='rslice')
+        sampler = dynesty.NestedSampler(self.loglikelihood_dynesty, 
+                                        self.prior_setup, 
+                                        self.nDims,
+                                        nlive=live_points*self.nDims, 
+                                        bootstrap=0, 
+                                        logl_args=(self.param_list_free,)) #,sample='rslice')
         sampler.run_nested(dlogz=precision_criterion, print_progress=True)
         results = sampler.results
         return results

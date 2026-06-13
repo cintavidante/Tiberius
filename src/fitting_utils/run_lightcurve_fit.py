@@ -3,8 +3,6 @@ import os
 import Tiberius
 from global_utils import parseInput
 
-
-
 Tiberius_path = "/".join(sys.argv[0].split("/")[:-1])
 starting_bin = int(sys.argv[1])
 stopping_bin = int(sys.argv[2])
@@ -32,6 +30,8 @@ make_folder("%s/plots"%input_dict['output_foldername'])
 make_folder("%s/pickled_objects"%input_dict['output_foldername'])
 
 os.system("mv *.pickle %s/pickled_objects/"%input_dict['output_foldername'])
-os.system("mv *.txt %s/tables/"%input_dict['output_foldername'])
+
+# This also moves the fitting_input.txt and all of the files
+# os.system("mv *.txt %s/tables/"%input_dict['output_foldername'])
 os.system("mv *.png %s/plots/"%input_dict['output_foldername'])
 os.system("mv *.pdf %s/plots/"%input_dict['output_foldername'])
