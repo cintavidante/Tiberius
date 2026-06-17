@@ -19,7 +19,7 @@ class Param(object):
 
 
 class LightcurveModel(object):
-    def __init__(self,flux,flux_error,time_array,prior_file,fit_models,model_inputs):
+    def __init__(self,flux,flux_error,time_array,prior_file,fit_models,model_inputs,model_input_labels):
 
         """
 
@@ -41,6 +41,7 @@ class LightcurveModel(object):
         self.flux_array = flux
         self.flux_err = flux_error
         self.time_array = time_array
+        self.input_labels = model_input_labels
 
         file = pd.read_csv(prior_file, sep='\s+', comment='#')
         currVals = list(file['value'])
@@ -177,8 +178,6 @@ class LightcurveModel(object):
         if self.GP_used:
             self.GP_model.update_model(self.param_dict)
         return
-    
-
 
 
     def return_flux_err(self):

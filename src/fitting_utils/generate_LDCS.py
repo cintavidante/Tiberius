@@ -462,7 +462,7 @@ for ilightcurve in range(nlc):
         plt.xlabel("Wavelength")
         plt.ylabel("Coefficient value")
         plt.savefig("LD_model_values_lc{}.png".format(ilightcurve),bbox_inches="tight",dpi=360)
-        plt.show()
+        # plt.show()
 
 
     ### Pickle LDTk model in case we need it later

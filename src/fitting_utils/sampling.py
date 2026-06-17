@@ -6,6 +6,7 @@ import numpy as np
 
 import dynesty
 import emcee
+import copy
 
 import sys
 import pickle
@@ -17,6 +18,9 @@ from scipy import optimize,stats
 from fitting_utils import plotting_utils as pu
 from fitting_utils import priors
 from fitting_utils import joint_fitting as jf
+
+from dynesty import plotting as dyplot
+from dynesty.utils import resample_equal
 
 class Sampling(object):
     def __init__(self,lightcurve_list,sampling_arguments,sampling_method):
@@ -41,7 +45,7 @@ class Sampling(object):
         self.sampling_method = sampling_method
         self.sampling_arguments = sampling_arguments
 
-        if sampling_method=='emcee' or sampling_method=='LM':
+        if sampling_method =='emcee' or sampling_method =='LM' or sampling_method == 'dynesty':
             # Only written for emcee and LM at the moment
             self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
 
@@ -49,25 +53,23 @@ class Sampling(object):
             self.prior_dict      = self.joint_fitter.prior_dict_global
             self.param_list_free = self.joint_fitter.param_list_global
 
+            if self.sampling_method == 'dynesty':
+                self.nDims = len(self.param_list_free)
+
         else:
-            #raise NotImplementedError("Only written for emcee at the moment.")
             self.lightcurve = lightcurve_list[0]
             # Evie's original
 
             self.param_dict      = self.lightcurve.param_dict
             self.param_list_free = self.lightcurve.param_list_free
             self.prior_dict      = self.lightcurve.prior_dict
-            
-
-            if self.sampling_method == 'dynesty':
-                self.nDims = len(self.param_list_free)
-
-            
-        
 
     # -------------------- Dynesty methods -------------------- #
+    
     def prior_setup(self, x):
+
         if self.sampling_method == 'dynesty':
+
             theta = [0] * self.nDims
 
             for i in range(self.nDims):
@@ -76,7 +78,6 @@ class Sampling(object):
                 elif self.prior_dict['%s_prior'%self.param_list_free[i]] == 'U':
                     theta[i] = priors.UniformPrior(self.prior_dict['%s_1'%self.param_list_free[i]], self.prior_dict['%s_2'%self.param_list_free[i]])(np.array(x[i]))
             return theta
-
 
 
     def loglikelihood_dynesty(self,theta,param_list):
@@ -94,7 +95,7 @@ class Sampling(object):
             
             flux_error = lc.return_flux_err()
 
-            if self.lightcurve.GP_used:
+            if lc.GP_used:
                 model_calc = lc.calc(with_GP=False)
                 logL = lc.GP_model.lnlike(model_calc,flux_error)
             else:
@@ -107,7 +108,10 @@ class Sampling(object):
         return logL_total
 
 
-    def run_dynesty(self):
+    def run_dynesty(self, wavelength_bin=0):
+
+        namelist = self.param_list_free
+
         live_points = self.sampling_arguments['nlive_pdim']
         precision_criterion = self.sampling_arguments['precision_crit']
         sampler = dynesty.NestedSampler(self.loglikelihood_dynesty, 
@@ -118,8 +122,73 @@ class Sampling(object):
                                         logl_args=(self.param_list_free,)) #,sample='rslice')
         sampler.run_nested(dlogz=precision_criterion, print_progress=True)
         results = sampler.results
-        return results
 
+        print(results.summary())
+
+        lnz_truth = self.nDims * -np.log(2 * 10.)  # analytic evidence solution
+        fig, axes = dyplot.runplot(results, lnz_truth=lnz_truth)  # summary (run) plot
+
+        fig.savefig('dynesty_summary_run.png')
+
+        fig, axes = dyplot.traceplot(results, truths=np.zeros(self.nDims),
+                             truth_color='black', show_titles=True,
+                             trace_cmap='viridis', connect=True,
+                             connect_highlight=range(5))
+        
+        fig.savefig('dynesty_trace_plot.png')
+
+        samples, weights = results.samples, results.importance_weights()
+        # mean, cov = dyfunc.mean_and_cov(samples, weights)
+        equal_weights_samples = results.samples_equal()
+
+        # Get weighted posterior:
+        weights = np.exp(results['logwt'] - results['logz'][-1])
+        posterior_samples = resample_equal(results.samples, weights)
+
+        # print(equal_weights_samples)
+        # print('---')
+        # print(equal_weights_samples.T)
+        # print('---')
+        # print(posterior_samples)
+
+        # why are they different? the other one is from juliet
+
+        med, up, low, mode = recover_quartiles_single(posterior_samples,namelist,bin_number=(wavelength_bin+1),
+                                                      verbose=True,save_result=True,burn=False)
+        
+        for ilc,lc in enumerate(self.lightcurve_list):
+            if len(self.lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(med,ilc,namelist)
+            else:
+                lc_theta = med
+            lc.update_model(lc_theta)
+        
+        for ilc,lc in enumerate(self.lightcurve_list):
+                pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
+        
+        upper_lightcurve_list = copy.deepcopy(self.lightcurve_list)
+        lower_lightcurve_list = copy.deepcopy(self.lightcurve_list)
+
+        upper = up
+        lower = low
+
+        for ilc,lc in enumerate(upper_lightcurve_list):
+            if len(upper_lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(upper,ilc,namelist)
+            else:
+                lc_theta = upper
+            lc.update_model(lc_theta)
+        
+        for ilc,lc in enumerate(lower_lightcurve_list):
+            if len(upper_lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(lower,ilc,namelist)
+            else:
+                lc_theta = upper
+            lc.update_model(lc_theta)
+        
+        write_fit_diagnostics(self,wavelength_bin,dynesty_fit=True,burn=False)
+
+        return self.lightcurve_list, upper_lightcurve_list, lower_lightcurve_list
 
     # -------------------- EMCEE methods -------------------- #
     def logprior_emcee(self, theta):
@@ -217,6 +286,7 @@ class Sampling(object):
 
         """Run emcee MCMC sampling."""
         nsteps   = self.sampling_arguments['nsteps']
+        ndiscard = self.sampling_arguments['ndiscard']
         nwalkers = self.sampling_arguments['nwalkers']
         nthreads = self.sampling_arguments['nthreads']
         npars    = len(self.param_list_free)
@@ -299,13 +369,14 @@ class Sampling(object):
             sampler, highest_prob_pars, highest_prob = self.advance_chain(sampler,p0,nsteps,burn,save_chain,wavelength_bin)
 
         # save plots of chains
-        pu.plot_chains(sampler,burn,wavelength_bin,npars,namelist)
+        pu.plot_chains(sampler,burn,wavelength_bin,npars,namelist,ndiscard)
 
         if nsteps >= 500:
             if burn:
                 samples = sampler.chain[:, int(nsteps/2):, :].reshape((-1, ndim))
             else:
-                samples = sampler.get_chain(discard=int(nsteps/4), thin=10, flat=True)
+                # samples = sampler.get_chain(discard=int(nsteps/4), thin=10, flat=True)
+                samples = sampler.get_chain(discard=ndiscard, thin=10, flat=True)
         else:
             samples = sampler.chain[:, -100:, :].reshape((-1, npars))
 
@@ -320,10 +391,32 @@ class Sampling(object):
 
         for ilc,lc in enumerate(self.lightcurve_list):
             if len(self.lightcurve_list)>1:
-                lc_theta,_ = self.joint_fitter.map_theta(med,ilc,namelist)
+                lc_theta, _ = self.joint_fitter.map_theta(med,ilc,namelist)
             else:
                 lc_theta = med
             lc.update_model(lc_theta)
+            print(f'testing lc 1: {lc.systematic_model.poly_used}')
+        
+        upper_lightcurve_list = copy.deepcopy(self.lightcurve_list)
+        lower_lightcurve_list = copy.deepcopy(self.lightcurve_list)
+
+        upper = up
+        lower = low
+
+        for ilc,lc in enumerate(upper_lightcurve_list):
+            if len(upper_lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(upper,ilc,namelist)
+            else:
+                lc_theta = upper
+            lc.update_model(lc_theta)
+        
+        for ilc,lc in enumerate(lower_lightcurve_list):
+            if len(upper_lightcurve_list)>1:
+                lc_theta, _ = self.joint_fitter.map_theta(lower,ilc,namelist)
+            else:
+                lc_theta = upper
+            lc.update_model(lc_theta)
+
         write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
 
         if not burn:
@@ -337,8 +430,8 @@ class Sampling(object):
 
         sampler.reset()
 
-        return self.lightcurve_list
-
+        return self.lightcurve_list, upper_lightcurve_list, lower_lightcurve_list
+    
     ### -------- Levenberg-Marquadt methods -------- ###
     def run_LM(self,wavelength_bin=0):
         """
@@ -555,6 +648,61 @@ class Sampling(object):
 
         return beta_factor
 
+# def save_dynesty_results(self, wb, output_foldername, verbose):
+
+#     pickle.dump(self.sampler_results, open(output_foldername + '/pickled_objects/' + 'dynesty_result_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+
+#     # from dynesty import utils as dyfunc
+#     samples, weights = self.sampler_results.samples, self.sampler_results.importance_weights()
+#     # mean, cov = dyfunc.mean_and_cov(samples, weights)
+#     equal_weights_samples = self.sampler_results.samples_equal()
+
+#     pickle.dump(samples, open(output_foldername + '/pickled_objects/' + 'dynesty_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+#     pickle.dump(weights, open(output_foldername + '/pickled_objects/' + 'dynesty_weights_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+#     pickle.dump(equal_weights_samples, open(output_foldername + '/pickled_objects/' + 'dynesty_equal_weights_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+
+#     namelist = self.param_list_free
+#     medians = []
+#     up_err = []
+#     low_err = []
+#     for i in range(len(namelist)):
+#         medians.append(np.percentile(equal_weights_samples.T[i], 50))
+#         up_err.append(np.percentile(equal_weights_samples.T[i], 84) - medians[i])
+#         low_err.append(medians[i] - np.percentile(equal_weights_samples.T[i], 16))
+#     self.best_fit_values = medians
+
+#     if wb == 0:
+#         new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
+#     else:
+#         new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
+
+#     print('\nSaving best fit parameters to table...\n')
+
+#     for i in range(self.nDims):
+#         # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
+#         new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
+
+#         if verbose:
+#             print("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
+
+#     new_tab.write('#------------------ \n')
+#     new_tab.close()
+
+#     ## plotting
+#     from dynesty import plotting as dyplot
+#     ## maybe move the corner plot somewhere else
+#     fig, ax = dyplot.cornerplot(self.sampler_results, color='dodgerblue',
+#                             truth_color='black', show_titles=True,
+#                             quantiles=None, max_n_ticks=3)
+#     plt.savefig(output_foldername + '/Figures/' + 'dynesty_corner_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
+
+#     fig, axes = dyplot.traceplot(self.sampler_results,
+#                                 truth_color='black', show_titles=True,
+#                                 trace_cmap='viridis', connect=True,
+#                                 connect_highlight=range(5))
+#     plt.savefig(output_foldername + '/Figures/' + 'dynesty_trace_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
+#     return
+
 
 
 def save_LM_results(fitted_lightcurve,param_medians,param_uncertainties,bin_number,verbose=True):
@@ -593,7 +741,7 @@ def save_LM_results(fitted_lightcurve,param_medians,param_uncertainties,bin_numb
     return
 
 
-def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=False,LM_fit=False,emcee_sampler=None,nsteps=None):
+def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=False,LM_fit=False,dynesty_fit=False,emcee_sampler=None,nsteps=None):
 
     if wavelength_bin == 0:
         read_mode = 'w'
@@ -610,6 +758,9 @@ def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=Fal
     if LM_fit:
 
         diagnostic_tab = open('LM_statistics.txt',read_mode)
+    
+    if dynesty_fit:
+        diagnostic_tab = open('dynesty_statistics.txt',read_mode)
 
     fitted_chi2        = sampling_model.chisq() # returns dictionary
     fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
