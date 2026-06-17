@@ -1,5 +1,7 @@
 import sys
 import os
+import shutil
+import glob
 import Tiberius
 from global_utils import parseInput
 
@@ -21,9 +23,6 @@ if bool(int(input_dict['generate_LDCs'])):
 for i in range(starting_bin,stopping_bin):
 	os.system("python %s/light_curve_fit.py %d"%(Tiberius_path,i))
 
-os.system("python %s/plot_output.py -s -st -cp"%Tiberius_path)
-os.system("python %s/model_table_generator.py"%Tiberius_path)
-
 make_folder("%s"%input_dict['output_foldername'])
 make_folder("%s/tables"%input_dict['output_foldername'])
 make_folder("%s/plots"%input_dict['output_foldername'])
@@ -31,7 +30,24 @@ make_folder("%s/pickled_objects"%input_dict['output_foldername'])
 
 os.system("mv *.pickle %s/pickled_objects/"%input_dict['output_foldername'])
 
-# This also moves the fitting_input.txt and all of the files
-# os.system("mv *.txt %s/tables/"%input_dict['output_foldername'])
+os.system("python %s/plot_output.py -s -st -cp"%Tiberius_path)
+# # # os.system("python %s/model_table_generator.py"%Tiberius_path)
+
+exclude_keywords = ["fitting_input", "LD_coefficients", "model", "prior"]
+
+for f in glob.glob("*.txt"):
+
+    if not any(k in f for k in exclude_keywords):
+
+        dst = f"{input_dict['output_foldername']}/tables/{f}"
+
+        if os.path.exists(dst):
+            os.remove(dst)
+
+        shutil.move(f, dst)
+
+os.system(f"cp *.txt {input_dict['output_foldername']}")
+
+os.system("mv *.pickle %s/pickled_objects/"%input_dict['output_foldername'])
 os.system("mv *.png %s/plots/"%input_dict['output_foldername'])
 os.system("mv *.pdf %s/plots/"%input_dict['output_foldername'])

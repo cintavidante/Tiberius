@@ -37,6 +37,7 @@ flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
 error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
 prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
 model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
+model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
 poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
 contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
 contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
@@ -316,7 +317,8 @@ def construct_lightcurves(ilightcurve,wb):
     prior_file = str(prior_file_list[ilightcurve])
 
     # initalise light curve model
-    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs)
+    input_labels =  np.array([str(i) for i in model_input_label_list[ilightcurve].split(',')])
+    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs,input_labels)
     param_dict = lc_class.return_parameter_dict()
     param_list_free = lc_class.return_free_parameter_list()
     nDims = len(param_list_free)
@@ -338,6 +340,7 @@ if sampling_method == 'emcee':
     sampling_arguments['nsteps'] = input_dict['nsteps']
     if sampling_arguments['nsteps'] != "auto": # use the autocorrelation time to determine when the chains have converged
         sampling_arguments['nsteps'] = int(input_dict['nsteps'])
+    sampling_arguments['ndiscard'] = int(input_dict['ndiscard'])
 
     sampling_arguments['nthreads'] = int(input_dict['nthreads'])
     sampling_arguments['use_typeII'] = bool(int(input_dict['typeII_maximum_likelihood']))
@@ -354,10 +357,12 @@ elif sampling_method == 'dynesty':
 # else:
 #     raise SystemExit
 
-sampling = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
+sampling = s.Sampling(lightcurve_objects, sampling_arguments, sampling_method)
 
 if sampling_method == 'emcee':
-    fitted_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
+
+    fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
+
     for i in range(nlc):
         _time = lightcurve_objects[i].time_array
         _flux = lightcurve_objects[i].flux_array
@@ -366,8 +371,23 @@ if sampling_method == 'emcee':
         print(fitted_lightcurve_list[i].transit_model.batman_params.u)
     #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
 
+    if nlc > 1:
+        pu.plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb)
+
 elif sampling_method == 'dynesty':
-    result = sampling.run_dynesty()
+
+    fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list = sampling.run_dynesty(wavelength_bin=wb)
+
+    for i in range(nlc):
+        _time = lightcurve_objects[i].time_array
+        _flux = lightcurve_objects[i].flux_array
+        _flux_error = lightcurve_objects[i].flux_err
+        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+        print(fitted_lightcurve_list[i].transit_model.batman_params.u)
+    #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
+
+    if nlc > 1:
+        pu.plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb)
 
 elif sampling_method == 'LM':
 

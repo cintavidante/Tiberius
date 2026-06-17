@@ -388,6 +388,7 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
             tc = model.param_dict['t0'].currVal
         except:
             tc = model.param_dict['t0']
+
     fig = plt.figure()
 
     if deconstruct:
@@ -556,6 +557,198 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
         plt.pause(5)
         plt.close()
 
+    return fig
+
+def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list,
+                              rebin_data=None, systematics_model_inputs=None, deconstruct=True, plot_residual_std=0,
+                              save_fig=False, wavelength_bin=None):
+    
+    """
+    Plot joint fit in one image.
+    """
+
+    cmap = plt.cm.inferno
+
+    fig, ax = plt.subplots(3, nlc, figsize=[nlc*10,10], gridspec_kw={'height_ratios': [3, 1, 2]})
+
+    for i in range(nlc):
+
+        # Call arrays
+        time = lightcurve_objects[i].time_array
+        flux = lightcurve_objects[i].flux_array
+        error = lightcurve_objects[i].flux_err
+        input_labels = lightcurve_objects[i].input_labels
+        model_median = fitted_lightcurve_list[i]
+        model_upper = upper_lightcurve_list[i]
+        model_lower = lower_lightcurve_list[i]
+
+        lcs = [model_median, model_upper, model_lower]
+
+        hourz = []
+        fluxs = []
+        errors = []
+        modelys = []
+        oots = []
+        mus = []
+        mucs = []
+        polys = []
+        resz = []
+
+        for im, model in enumerate(lcs):
+
+            try:
+                tc = model.t0.currVal
+            except:
+                try:
+                    tc = model.param_dict['t0'].currVal
+                except:
+                    tc = model.param_dict['t0']
+            
+            gp = model.GP_used
+
+            # Call systematic models
+            systematics_model = model.systematic_model
+            poly = systematics_model.poly_used
+            exp = systematics_model.exp_ramp_used
+            step = systematics_model.step_func_used
+
+            # convert times from days to hours from mid-transit
+            hours = mjd2hours(time, tc)
+
+            # calculate M&A transit model
+            model_y = model.calc(time,systematics_model_inputs)
+            modelys.append(model_y)
+            oot = 1
+
+            if poly:# and not gp:
+                if deconstruct:
+                    oot,poly_components = systematics_model.red_noise_poly(time,deconstruct_polys=True)
+                    polys.append(poly_components)
+                else:
+                    oot = systematics_model.red_noise_poly(time)
+
+            if exp:
+                exp_ramp = systematics_model.exponential_ramp(time)
+                oot *= exp_ramp
+
+            if step:
+                step_func = systematics_model.step_function(time)
+                oot *= step_func
+            
+            oots.append(oot)
+
+            if gp:
+                if deconstruct:
+                    mu,std,mu_components = model.calc_gp_component(time,flux,error,deconstruct_gp=True)
+                    mus.append(mu)
+                    mucs.append(mucs)
+                else:
+                    mu,std = model.calc_gp_component(time,flux,error,deconstruct_gp=False)
+                    mus.append(mu)
+                residuals = flux - model_y - mu
+            else:
+                residuals = flux - model_y
+
+            if rebin_data is not None:
+                xp,yp,ep = rebin(np.linspace(time[0],time[-1],rebin_data),time,flux,e=error,errors_from_rms=False)
+                _,yr,_ = rebin(np.linspace(time[0],time[-1],rebin_data),time,residuals,e=error)
+                hp = mjd2hours(xp,tc)
+            else:
+                hp, yp, ep, yr = hours,flux,error,residuals
+                hourz.append(hp)
+                fluxs.append(yp)
+                errors.append(ep)
+                resz.append(yr)
+
+
+        if rebin_data is not None:
+            ax[0, i].errorbar(hours, flux, error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
+            ax[0, i].errorbar(hp, yp, ep, fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
+        else:
+            ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=5, color=cmap(0.1))
+
+
+        if gp:
+            ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+            ax[0, i].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
+            ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
+            ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+
+            if len(mu_components) > 1:
+                alpha = 0.5
+            else:
+                alpha = 1
+            for j,m in enumerate(mucs[0]):
+                ax[1, i].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+
+                
+        if poly and not gp or exp and not gp:
+            ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+            ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+            ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model',lw=1.75)
+            ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=1.75)
+
+            if poly:
+                alpha=0.7
+                for j,m in enumerate(polys[0]):
+                    ax[1,i].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=1.75,color=cmap(0.5+(0.15*j)))
+
+            if exp:
+                ax[1, i].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+
+            if step:
+                ax[1, i].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+        
+        if rebin_data is not None:
+            ax[2, i].errorbar(hours, 1e6*residuals, 1e6*error, fmt='.', ms=5, color=cmap(0.3))
+            ax[2, i].errorbar(hp, yr*1e6, ep*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
+        else:
+            ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=5, color=cmap(0.1))
+            # ax[2, i].fill_between(hourz[0], resz[0]*1e6, resz[1]*1e6, alpha=0.3, color=cmap(0.3))
+
+        ax[2, i].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
+
+        ax[0, i].legend(loc='lower left')
+        ax[1, i].legend()
+
+        ax[0, i].set_ylabel('Normalized flux')
+        ax[1, i].set_ylabel('Component')
+        ax[2, i].set_ylabel('Residuals [ppm]')
+        ax[2, i].set_xlabel('Time from mid-transit [hours]')
+
+        # if plot_residual_std > 0:
+        #     print("plotting outliers")
+        #     rms = np.sqrt(np.mean(yr**2))*1e6
+
+        #     ax[2, i].axhline(plot_residual_std*rms,ls='--',color='r')
+        #     ax[2, i].axhline(-plot_residual_std*rms,ls='--',color='r')
+
+        #     if gp:
+        #         wn_var = np.exp(model.starting_gp_object.white_noise.get_value(time))
+        #         wn_std = np.sqrt(wn_var)
+        #         plt.fill_between(hours,-plot_residual_std*(std+wn_std),+plot_residual_std*(std+wn_std),
+        #                 color="k", alpha=0.2)
+        
+    if save_fig:
+        if wavelength_bin is not None:
+            wb = '_wb%s'%(str(wavelength_bin+1).zfill(4))
+        else:
+            wb = ''
+
+        if rebin_data is None:
+            # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
+            fig.savefig(f'fitted_model_lc_combined{wb}.png',bbox_inches='tight',dpi=200)
+        else:
+            fig.savefig('fitted_model_lc_combined_%s_rebin_%d.png'%(wb,rebin_data),bbox_inches='tight',dpi=200)
+
+        # fig.close()
+
+    # else:
+        # plt.show()
+        # fig.show(block=False) # only show for 5 seconds. This is necessary when running fits to multiple bins so that the code doesn't have to wait for user to manually close windows before continuing.
+        # fig.pause(5)
+        # fig.close()
+    
     return fig
 
 
@@ -1349,6 +1542,7 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
     ### Load in LD coefficients table for the wavelength centres and widths of the bins
     w,we = np.loadtxt(f'./LD_coefficients_lc{lc_idx}.txt',unpack=True,usecols=[0,1])
     w,we = np.atleast_1d(w)[completed_bins-1],np.atleast_1d(we)[completed_bins-1]
+    # w,we = np.atleast_1d(w)[completed_bins],np.atleast_1d(we)[completed_bins]
 
     ### Bin mask
     if mask is not None:
@@ -1499,24 +1693,30 @@ def make_corner_plot(sample_chains,bin_number,namelist,parameter_modes,save_fig=
         plt.show()
 
 
-def plot_chains(sampler,burn,wavelength_bin,npars,namelist):
+def plot_chains(sampler,burn,wavelength_bin,npars,namelist,discard=0):
 
-        # save plots of chains
-        if npars > 1:
-            fig,axes = plt.subplots(npars,1,sharex=True,figsize=(8,12))
-            for j in range(npars):
-                axes[j].plot(sampler.chain[:, :, j].T, color="k", alpha=0.4)
-                axes[j].set_ylabel(namelist[j],fontsize=20)
-                axes[j].set_xlabel("step number")
-        else:
-            fig,axes = plt.subplots(1,1,figsize=(6,3))
-            axes.plot(sampler.chain[:, :, 0].T, color="k", alpha=0.4)
-            axes.set_ylabel(namelist[0],fontsize=20)
-            axes.set_xlabel("step number")
+    chain = sampler.get_chain(discard=discard)
 
-        fig.tight_layout(h_pad=0.0)
-        if burn:
-            fig.savefig('burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
-        else:
-            fig.savefig('prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
-        plt.close()
+    # save plots of chains
+    if npars > 1:
+        fig,axes = plt.subplots(npars,1,sharex=True,figsize=(8,12))
+
+        for j in range(npars):
+            axes[j].plot(chain[:, :, j], color='k', alpha=0.4)
+            axes[j].set_ylabel(namelist[j],fontsize=20)
+        
+        axes[j-1].set_xlabel("step number")
+
+    else:
+        fig,axes = plt.subplots(1,1,figsize=(6,3))
+        
+        axes.plot(chain[:, :, 0], color="k", alpha=0.4)
+        axes.set_ylabel(namelist[0],fontsize=20)
+        axes.set_xlabel("step number")
+
+    fig.tight_layout(h_pad=0.0)
+    if burn:
+        fig.savefig('burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+    else:
+        fig.savefig('prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+    plt.close()
