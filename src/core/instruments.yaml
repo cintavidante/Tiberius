@@ -1,0 +1,86 @@
+#####################################################################
+# Instrument parameters
+# Notes: This file defines static parameters for all instruments
+#####################################################################
+
+
+WHT_ACAM:
+  observatory: ground
+  image_extension:
+    rule: nwin_map
+    map: 
+      1: [1]
+      2: [1,2]
+  id_slice: [-12, -4]
+  prefix: "r"
+  buffer_pixels_find_trace: 5
+  buffer_pixels_extract_trace:
+    rule: static
+    left: 20
+    right: 20
+  diameter: 420
+  altitude: 2420
+  gain: 
+    fast: 1.86
+    slow: 0.92
+  readnoise:
+    fast: 6.5
+    slow: 3.7
+  dark_current: 4
+  W3: 2.0
+  h0: 8000
+
+NTT_EFOSC2:
+  observatory: ground
+  image_extension:
+    rule: explicit
+    list: [0]
+  id_slice: [-18, -5]
+  prefix: "EFOSC2"
+  buffer_pixels_find_trace: 5
+  buffer_pixels_extract_trace: 
+    rule: static
+    left: 65
+    right: 65
+  diameter: 358
+  altitude: 2377
+  gain: 1.38
+  readnoise: 12.6
+  dark_current: 7
+  W3: 2.0
+  h0: 8000
+
+KECK_NIRSPEC:
+  observatory: ground
+  image_extension:
+    rule: explicit
+    list: [0]
+  buffer_pixels_find_trace: 0
+  buffer_pixels_extract_trace: 
+    rule: edge_threshold
+    left_threshold: 1000
+    right_threshold: 1000
+    buffer_pixels: 8
+    default_buffer_pixels: 0
+  diameter: 1000
+  altitude: 4000
+  gain: 3.01
+  readnoise: 11.56
+  dark_current: 2520
+  scintillation: 0
+
+
+JWST:
+  observatory: space
+  image_extension:
+    rule: explicit
+    list: ["SCI", "ERR"]
+  buffer_pixels_find_trace: 5
+  buffer_pixels_extract_trace:
+    rule: static
+    left: 0
+    right: 0
+  default_gain: 1
+  default_readnoise: 0
+  dark_current: 0
+  scintillation: 0
