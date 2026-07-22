@@ -25,7 +25,6 @@ args = parser.parse_args()
 
 input_dict = parseInput('fitting_input.txt')
 
-
 wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
 wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
 
@@ -37,8 +36,17 @@ flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
 error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
 prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
 model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
-model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
-poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
+
+try:    
+    model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
+except:
+    model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
+
+try:
+    poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
+except:
+    poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(',')])
+
 contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
 contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
 

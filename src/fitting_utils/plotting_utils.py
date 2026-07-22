@@ -2,6 +2,7 @@
 #### Contact: jameskirk@live.co.uk
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 from scipy.optimize import curve_fit
 import astropy.constants as c
@@ -580,9 +581,13 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
     Plot joint fit in one image.
     """
 
+    label_size = 25 # used to be 8
+    mpl.rcParams['xtick.labelsize'] = label_size 
+    mpl.rcParams['ytick.labelsize'] = label_size 
+
     cmap = plt.cm.inferno
 
-    fig, ax = plt.subplots(3, nlc, figsize=[nlc*10,10], gridspec_kw={'height_ratios': [3, 1, 2]})
+    fig, ax = plt.subplots(3, nlc, figsize=[nlc*20,15], gridspec_kw={'height_ratios': [3, 1, 1]})
 
     for i in range(nlc):
 
@@ -678,56 +683,106 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
             ax[0, i].errorbar(hours, flux, error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
             ax[0, i].errorbar(hp, yp, ep, fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
         else:
-            ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=5, color=cmap(0.1))
+            try:
+                ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, elinewidth=2, color=cmap(0.1))
+            except:
+                ax[0].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, color=cmap(0.1))
+
 
 
         if gp:
-            ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
-            ax[0, i].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
-            ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
-            ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+            try:
+                ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+                ax[0, i].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
+                ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
+                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+            except:
+                ax[0].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+                ax[0].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
+                ax[0].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
+                ax[0].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
 
             if len(mu_components) > 1:
                 alpha = 0.5
             else:
                 alpha = 1
             for j,m in enumerate(mucs[0]):
-                ax[1, i].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                try:
+                    ax[1, i].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                except:
+                    ax[1].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
 
                 
         if poly and not gp or exp and not gp:
-            ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
-            ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
-            ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model',lw=1.75)
-            ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=1.75)
+
+            try:
+                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model', lw=3)
+                ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model', lw=3)
+                ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=3)
+            except:
+                ax[0].plot(hourz[0], modelys[1], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[2], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                ax[0].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=1.75)
+
 
             if poly:
                 alpha=0.7
                 for j,m in enumerate(polys[0]):
-                    ax[1,i].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=1.75,color=cmap(0.5+(0.15*j)))
+                    try:
+                        ax[1,i].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
+                    except:
+                        ax[1].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=2,color=cmap(0.5+(0.15*j)))
 
             if exp:
-                ax[1, i].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+                try:
+                    ax[1, i].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+                except:
+                    ax[1].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
 
             if step:
-                ax[1, i].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+                try:
+                    ax[1, i].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+                except:
+                    ax[1].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
         
         if rebin_data is not None:
             ax[2, i].errorbar(hours, 1e6*residuals, 1e6*error, fmt='.', ms=5, color=cmap(0.3))
             ax[2, i].errorbar(hp, yr*1e6, ep*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
         else:
-            ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=5, color=cmap(0.1))
+            try:
+                ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+            except:
+                ax[2].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
             # ax[2, i].fill_between(hourz[0], resz[0]*1e6, resz[1]*1e6, alpha=0.3, color=cmap(0.3))
 
-        ax[2, i].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
+        
+        try:
+            ax[2, i].axhline(0, ls='--', color=cmap(0.3), linewidth=2)
 
-        ax[0, i].legend(loc='lower left')
-        ax[1, i].legend()
+            ax[0, 0].legend(loc='lower right', fontsize=20)
+            ax[0, 1].legend(loc='lower left', fontsize=20)
+            ax[1, 0].legend(loc='lower left', fontsize=20)
+            ax[1, 1].legend(fontsize=20)
 
-        ax[0, i].set_ylabel('Normalized flux')
-        ax[1, i].set_ylabel('Component')
-        ax[2, i].set_ylabel('Residuals [ppm]')
-        ax[2, i].set_xlabel('Time from mid-transit [hours]')
+            ax[0, i].set_ylabel('Normalized flux', fontsize=25)
+            ax[1, i].set_ylabel('RN component [ppm]',fontsize=15)
+            ax[2, i].set_ylabel('Residuals [ppm]',fontsize=25)
+            ax[2, i].set_xlabel('Time from mid-transit [hours]',fontsize=25)
+        except:
+            ax[2].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
+
+            ax[0].legend(loc='lower left')
+            ax[1].legend()
+
+            ax[0].set_ylabel('Normalized flux', fontsize=14)
+            ax[1].set_ylabel('RN component [ppm]',fontsize=14)
+            ax[2].set_ylabel('Residuals [ppm]',fontsize=14)
+            ax[2].set_xlabel('Time from mid-transit [hours]',fontsize=14)
+
 
         # if plot_residual_std > 0:
         #     print("plotting outliers")

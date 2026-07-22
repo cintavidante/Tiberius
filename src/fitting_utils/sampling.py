@@ -730,6 +730,16 @@ class Sampling(object):
         print('BIC = %f' % fitted_BIC) # global (joint likelihood)
         print('AIC = %f' % fitted_AIC) # global
     
+    print("\nIndividual light curve statistics:")
+    for ilc,lc in enumerate(sampling_model.lightcurve_list):
+        print(f'LC {ilc}')
+        print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
+        print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
+        print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
+        
+    diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
+    if sampling_model.nlightcurves > 1:
+        diagnostic_tab.write("--- Joint fit statistics ---\n")
         print("\nIndividual light curve statistics:")
         for ilc,lc in enumerate(sampling_model.lightcurve_list):
             print(f'LC {ilc}')
