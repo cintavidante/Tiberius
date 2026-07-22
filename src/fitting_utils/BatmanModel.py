@@ -55,8 +55,14 @@ class BatmanModel(object):
             u2 = np.sqrt(self.param_dict['u1'].currVal)*(1-2*self.param_dict['u2'].currVal)
             self.batman_params.limb_dark = 'quadratic'
             self.batman_params.u = [u1, u2]
-        
-        self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1)    #initializes model
+        print(self.batman_params)
+        if 'fp' in all_params and 't_secondary' in all_params:
+            self.transittype = "secondary"
+        else:
+            self.transittype = "primary"
+
+
+        self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1, transittype=self.transittype)    #initializes model
 
     def update_model(self, new_param_dict):
         self.param_dict = new_param_dict
@@ -80,8 +86,8 @@ class BatmanModel(object):
             u1 = 2*np.sqrt(self.param_dict['u1'].currVal)*self.param_dict['u2'].currVal
             u2 = np.sqrt(self.param_dict['u1'].currVal)*(1-2*self.param_dict['u2'].currVal)
             self.batman_params.u = [u1, u2]
-        self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1)    #initializes model
-        
+
+        self.batman_model = batman.TransitModel(self.batman_params, self.time_array, nthreads=1, transittype=self.transittype)    #initializes model
         return
 
     def calc(self,time_array=None, overwrite=False):
@@ -96,9 +102,9 @@ class BatmanModel(object):
         transitShape - the modelled transit light curve"""
 
         if time_array is not None:
-            new_model = batman.TransitModel(self.batman_params, time_array)    # model
+            new_model = batman.TransitModel(self.batman_params, time_array, transittype=self.transittype)    # model
             return new_model.light_curve(self.batman_params)
         if time_array is not None and overwrite == True:
-            self.batman_model = batman.TransitModel(self.batman_params, time_array)    #if we want to continue using that time for the model
+            self.batman_model = batman.TransitModel(self.batman_params, time_array, transittype=self.transittype)    #if we want to continue using that time for the model
             self.time_array = time_array
             return self.batman_model.light_curve(self.batman_params)

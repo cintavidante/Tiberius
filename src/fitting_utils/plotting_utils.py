@@ -270,13 +270,21 @@ def plot_models(model_list,time,flux_array,error_array,wvl_centre,rebin_data=Non
         # calculate transit model
         model_y = model_list[i].calc(t)
 
-        if gp:
-            mu,std = model_list[i].calc_gp_component(t,flux_array[i],error_array[i])
-            residuals = flux_array[i] - model_y - mu
-            RMS = model_list[i].rms(t,flux_array[i],error_array[i])
+        # if gp:
+        #     mu,std = model_list[i].calc_gp_component(t,flux_array[i],error_array[i])
+        #     residuals = flux_array[i] - model_y - mu
+        #     RMS = model_list[i].rms(t,flux_array[i],error_array[i])
+        # else:
+        #     residuals = flux_array[i]-model_y
+        #     RMS = model_list[i].rms(t,flux_array[i])
+
+        if model_list[i].GP_used:
+            mu, _ = model_list[i].calc_gp_component()
+            residuals = (model_list[i].calc_residuals() - mu)
         else:
-            residuals = flux_array[i]-model_y
-            RMS = model_list[i].rms(t,flux_array[i])
+            residuals = model_list[i].calc_residuals()
+
+        RMS = np.sqrt(np.mean(residuals**2))
 
         print("RMS/photon noise = %.2f"%(RMS/error_array[i].mean()))
 
@@ -382,12 +390,17 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
     # figure out whether it's a white light curve
     try:
-        tc = model.t0.currVal
+        tc = model.param_dict['t_secondary'].currVal
+        model_name = 'eclipse'
     except:
+        tc = model.param_dict['t_secondary']
+        model_name = 'eclipse'
         try:
             tc = model.param_dict['t0'].currVal
+            model_name = 'transit'
         except:
             tc = model.param_dict['t0']
+            model_name = False
 
     fig = plt.figure()
 
@@ -452,18 +465,18 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
 
     if gp:
-        ax1.plot(hours,mu+model_y,color='r',zorder=10,label='GP & transit model')
+        ax1.plot(hours,mu+model_y,color='r',zorder=10,label='GP & %s model'%model_name)
         ax1.plot(hours,mu+1,color='g',label='GP')
-        ax1.plot(hours,model_y,color='0.75',ls='--',zorder=9,label='Transit model')
+        ax1.plot(hours,model_y,color='0.75',ls='--',zorder=9,label='%s model'%model_name)
         NCOL = 1
 
     if gp:
         ax1.legend(ncol=NCOL,fontsize=6)
 
     if poly and not gp or exp and not gp:
-        ax1.plot(hours,model_y,color='r',zorder=10,label='Systematics & transit model',lw=1)
+        ax1.plot(hours,model_y,color='r',zorder=10,label='Systematics & %s model'%model_name,lw=1)
         ax1.plot(hours,oot,color='g',label='Systematics model',lw=1)
-        ax1.plot(hours,model_y/oot,color='0.75',ls='--',zorder=9,label='Transit model',lw=1)
+        ax1.plot(hours,model_y/oot,color='0.75',ls='--',zorder=9,label='%s model'%model_name,lw=1)
         NCOL = 1
         ax1.legend(ncol=NCOL,fontsize=6)
 
@@ -532,7 +545,7 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
                     color="k", alpha=0.2)
 
     ax2.set_ylabel('Residuals (ppm)')
-    ax2.set_xlabel('Time from mid-transit (hours)')
+    ax2.set_xlabel('Time from mid-%s (hours)'%model_name)
     ax2.tick_params(bottom=True,top=True,left=True,right=True,direction="inout")
     ax2.tick_params(which='minor',bottom=True,top=True,left=True,right=True,direction="inout")#,labelsize=fontsize-4,length=4,width=1.)
 

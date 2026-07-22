@@ -215,7 +215,19 @@ def construct_lightcurves(ilightcurve,wb):
     else:
         GP_used = False
 
-
+    # Define model inputs for transit model
+    model_inputs['transit_model'] = {}
+    model_inputs['transit_model']['use_kipping'] = bool(int(input_dict['use_kipping_parameterisation']))
+    model_inputs['transit_model']['ld_law'] = str(input_dict['ld_law'])
+    model_inputs['transit_model']['use_generated_ld_as_prior'] = bool(int(input_dict['use_generated_ld_as_prior']))
+    model_inputs['transit_model']['use_generated_ld'] = bool(int(input_dict['use_generated_ld']))
+    
+    if model_inputs['transit_model']['use_generated_ld_as_prior'] or model_inputs['transit_model']['use_generated_ld']:
+        try:
+            model_inputs['transit_model']['LDCs_generated'] = np.loadtxt(f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
+        except:
+            raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
+            
     if GP_used:
         GP_model_input_files = [i.strip() for i in input_dict['GP_model_input_files'].split(',')]
         GP_model_inputs = []
@@ -290,29 +302,9 @@ def construct_lightcurves(ilightcurve,wb):
     if GP_used:
         model_inputs['GP_model']['model_inputs'] = GP_model_inputs
         pickle.dump(GP_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_GP_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
-
-    model_inputs['transit_model'] = {}
-    model_inputs['transit_model']['use_kipping'] = bool(int(input_dict['use_kipping_parameterisation']))
-    model_inputs['transit_model']['ld_law'] = str(input_dict['ld_law'])
-    model_inputs['transit_model']['use_generated_ld_uncertainties'] = bool(int(input_dict['use_generated_ld_uncertainties']))
-    if model_inputs['transit_model']['use_generated_ld_uncertainties'] and str(input_dict["LDCs_package"]) == "exotic-ld":
-        raise SystemError("Can't have use_generated_ld_uncertainties = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
-    if model_inputs['transit_model']['use_generated_ld_uncertainties'] or not white_light_fit:
-        try:
-            wc,we,u1,u1_err,u2,u2_err,u3,u3_err,u4,u4_err = np.loadtxt(f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
-            # Extract coefficients for the specific wavelength bin
-            u1 = np.atleast_1d(u1)[wb]
-            u1_err = np.atleast_1d(u1_err)[wb]
-            u2 = np.atleast_1d(u2)[wb]
-            u2_err = np.atleast_1d(u2_err)[wb]
-            u3 = np.atleast_1d(u3)[wb]
-            u3_err = np.atleast_1d(u3_err)[wb]
-            u4 = np.atleast_1d(u4)[wb]
-            u4_err = np.atleast_1d(u4_err)[wb]
-            model_inputs['transit_model']['LDCs_generated'] = (wc, we, u1, u1_err, u2, u2_err, u3, u3_err, u4, u4_err)
-
-        except:
-            raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
+    
+    if str(input_dict["LDCs_package"]) == "exotic-ld" and model_inputs['transit_model']['use_generated_ld_as_prior']:
+        raise SystemError("Can't have use_generated_ld_as_prior = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
 
     prior_file = str(prior_file_list[ilightcurve])
 
@@ -361,33 +353,11 @@ sampling = s.Sampling(lightcurve_objects, sampling_arguments, sampling_method)
 
 if sampling_method == 'emcee':
 
-    fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
-
-    for i in range(nlc):
-        _time = lightcurve_objects[i].time_array
-        _flux = lightcurve_objects[i].flux_array
-        _flux_error = lightcurve_objects[i].flux_err
-        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
-        print(fitted_lightcurve_list[i].transit_model.batman_params.u)
-    #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
-
-    if nlc > 1:
-        pu.plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb)
+    fitted_lightcurve_list = sampling.run_emcee(wavelength_bin=wb)
 
 elif sampling_method == 'dynesty':
 
-    fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list = sampling.run_dynesty(wavelength_bin=wb)
-
-    for i in range(nlc):
-        _time = lightcurve_objects[i].time_array
-        _flux = lightcurve_objects[i].flux_array
-        _flux_error = lightcurve_objects[i].flux_err
-        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
-        print(fitted_lightcurve_list[i].transit_model.batman_params.u)
-    #pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb')) already written in Sampling.run_emcee
-
-    if nlc > 1:
-        pu.plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb)
+    fitted_lightcurve_list = sampling.run_dynesty(wavelength_bin=wb)
 
 elif sampling_method == 'LM':
 
@@ -409,14 +379,18 @@ elif sampling_method == 'LM':
 
         rchi2_rescaled = sampling_run2.reducedChisq()
         print("reduced Chi2 following error rescaling = %.2f"%(rchi2_rescaled['total']))
-        
-    for i in range(nlc):
-        _time = lightcurve_objects[i].time_array
-        _flux = lightcurve_objects[i].flux_array
-        _flux_error = lightcurve_objects[i].flux_err
-        fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
-        pickle.dump(fitted_lightcurve_list[i],open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_lc{}_wb{}.pickle'.format(str(i),str(wb+1).zfill(4)),'wb'))
+        pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
-# comment out for the moment
-#if white_light_fit:
- #   s.update_prior_file(prior_file)
+sampling.save_results(wb, output_foldername, True)
+sampling.write_fit_diagnostics(wb, output_foldername, True)
+
+for i in range(nlc):
+    _time = lightcurve_objects[i].time_array
+    _flux = lightcurve_objects[i].flux_array
+    _flux_error = lightcurve_objects[i].flux_err
+    fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+    print(fitted_lightcurve_list[i].transit_model.batman_params.u)
+#pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
+
+if white_light_fit:
+    s.update_prior_file(prior_file, output_foldername, wb)

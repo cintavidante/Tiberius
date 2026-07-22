@@ -12,7 +12,7 @@ import sys
 import pickle
 
 from scipy import optimize,stats
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 
 # from fitting_utils import parametric_fitting_functions as pf
 from fitting_utils import plotting_utils as pu
@@ -46,7 +46,7 @@ class Sampling(object):
         self.sampling_arguments = sampling_arguments
 
         if sampling_method =='emcee' or sampling_method =='LM' or sampling_method == 'dynesty':
-            # Only written for emcee and LM at the moment
+            # Only written for emcee, LM, and dynesty at the moment
             self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
 
             self.param_dict      = self.joint_fitter.param_dict_global
@@ -59,7 +59,6 @@ class Sampling(object):
         else:
             self.lightcurve = lightcurve_list[0]
             # Evie's original
-
             self.param_dict      = self.lightcurve.param_dict
             self.param_list_free = self.lightcurve.param_list_free
             self.prior_dict      = self.lightcurve.prior_dict
@@ -80,28 +79,28 @@ class Sampling(object):
             return theta
 
 
-    def loglikelihood_dynesty(self,theta,param_list):
+    def loglikelihood(self,theta):
 
         logL_total = 0.0
 
         for ilc, lc in enumerate(self.lightcurve_list):
+              
+            if len(self.lightcurve_list)>1:
+                lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,self.param_list_free) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
+            else:
+                lc_theta = theta
 
-            if theta is not None:
-                if len(self.lightcurve_list)>1:
-                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
-                else:
-                    lc_theta = theta
-                lc.update_model(lc_theta)
-            
-            flux_error = lc.return_flux_err()
+            lc.update_model(lc_theta)
+            noise = lc.return_flux_err()
 
             if lc.GP_used:
                 model_calc = lc.calc(with_GP=False)
-                logL = lc.GP_model.lnlike(model_calc,flux_error)
+                logL = lc.GP_model.lnlike(model_calc,noise)
             else:
                 residuals  = lc.calc_residuals()
-                N = len(residuals)
-                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(flux_error)) - np.sum(residuals**2 / (2*flux_error**2))
+                
+                N = len(noise)
+                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(noise)) - np.sum(residuals**2 / (2*noise**2))
             
             logL_total += logL
         
@@ -114,47 +113,18 @@ class Sampling(object):
 
         live_points = self.sampling_arguments['nlive_pdim']
         precision_criterion = self.sampling_arguments['precision_crit']
-        sampler = dynesty.NestedSampler(self.loglikelihood_dynesty, 
+        sampler = dynesty.NestedSampler(self.loglikelihood, 
                                         self.prior_setup, 
                                         self.nDims,
                                         nlive=live_points*self.nDims, 
-                                        bootstrap=0, 
-                                        logl_args=(self.param_list_free,)) #,sample='rslice')
+                                        bootstrap=0) #,sample='rslice')
         sampler.run_nested(dlogz=precision_criterion, print_progress=True)
-        results = sampler.results
-
-        print(results.summary())
-
-        lnz_truth = self.nDims * -np.log(2 * 10.)  # analytic evidence solution
-        fig, axes = dyplot.runplot(results, lnz_truth=lnz_truth)  # summary (run) plot
-
-        fig.savefig('dynesty_summary_run.png')
-
-        fig, axes = dyplot.traceplot(results, truths=np.zeros(self.nDims),
-                             truth_color='black', show_titles=True,
-                             trace_cmap='viridis', connect=True,
-                             connect_highlight=range(5))
-        
-        fig.savefig('dynesty_trace_plot.png')
-
-        samples, weights = results.samples, results.importance_weights()
-        # mean, cov = dyfunc.mean_and_cov(samples, weights)
-        equal_weights_samples = results.samples_equal()
-
-        # Get weighted posterior:
-        weights = np.exp(results['logwt'] - results['logz'][-1])
-        posterior_samples = resample_equal(results.samples, weights)
-
-        # print(equal_weights_samples)
-        # print('---')
-        # print(equal_weights_samples.T)
-        # print('---')
-        # print(posterior_samples)
-
-        # why are they different? the other one is from juliet
+        self.sampler_results = sampler.results
 
         med, up, low, mode = recover_quartiles_single(posterior_samples,namelist,bin_number=(wavelength_bin+1),
                                                       verbose=True,save_result=True,burn=False)
+        
+        self.best_fit_values = med
         
         for ilc,lc in enumerate(self.lightcurve_list):
             if len(self.lightcurve_list)>1:
@@ -165,30 +135,8 @@ class Sampling(object):
         
         for ilc,lc in enumerate(self.lightcurve_list):
                 pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
-        
-        upper_lightcurve_list = copy.deepcopy(self.lightcurve_list)
-        lower_lightcurve_list = copy.deepcopy(self.lightcurve_list)
 
-        upper = up
-        lower = low
-
-        for ilc,lc in enumerate(upper_lightcurve_list):
-            if len(upper_lightcurve_list)>1:
-                lc_theta, _ = self.joint_fitter.map_theta(upper,ilc,namelist)
-            else:
-                lc_theta = upper
-            lc.update_model(lc_theta)
-        
-        for ilc,lc in enumerate(lower_lightcurve_list):
-            if len(upper_lightcurve_list)>1:
-                lc_theta, _ = self.joint_fitter.map_theta(lower,ilc,namelist)
-            else:
-                lc_theta = upper
-            lc.update_model(lc_theta)
-        
-        write_fit_diagnostics(self,wavelength_bin,dynesty_fit=True,burn=False)
-
-        return self.lightcurve_list, upper_lightcurve_list, lower_lightcurve_list
+        return self.lightcurve_list
 
     # -------------------- EMCEE methods -------------------- #
     def logprior_emcee(self, theta):
@@ -207,39 +155,12 @@ class Sampling(object):
                     return -np.inf
         return lp
 
-    
-    def loglikelihood_emcee(self, theta, param_list):
-        """
-        Compute joint log likelihood as summation of individual lightcurve log likelihoods.
-        
-        Inputs:
-        theta      - array, vector of parameter values
-        param_list - list, global parameter names for mapping to each lightcurve (e.g. t0, c1_lc0, c2_lc0)
-        
-        Returns:
-        logL_total - float, total logL (summation if multiple lightcurves jointly fit)
-        """
-        logL_total   = 0.0
-        for ilc, lc in enumerate(self.lightcurve_list):
-            if theta is not None:
-                if len(self.lightcurve_list)>1:
-                    lc_theta,lc_param_list = self.joint_fitter.map_theta(theta,ilc,param_list) # e.g. lc_param_list (t0,c1_lc0,c2_lc0)
-                else:
-                    lc_theta = theta
-                lc.update_model(lc_theta)
-            residuals  = lc.calc_residuals()
-            flux_error = lc.return_flux_err()
-            N = len(residuals)
-            logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(flux_error)) - np.sum(residuals**2 / (2*flux_error**2))
-            logL_total += logL
-        return logL_total
-
-    def logprobability_emcee(self, theta, param_list):
+    def logprobability_emcee(self, theta):
         """Full log-probability for emcee: lnprior + lnlike."""
         lp = self.logprior_emcee(theta)
         if not np.isfinite(lp):
             return -np.inf
-        return lp + self.loglikelihood_emcee(theta, param_list)
+        return lp + self.loglikelihood(theta)
 
     def advance_chain(self,sampler,p0,nsteps,burn,save_chain,wavelength_bin):
         """The function that advances the emcee sampler chain with a progress bar
@@ -303,9 +224,9 @@ class Sampling(object):
 
          # intiate emcee sampler object
         if npars > 1:
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,args=[self.param_list_free],threads=nthreads)
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads)
         else: # from my own tests I find that for a single parameter, the acceptance fraction is too high. Increasing the stretch scale factor decreases the acceptance fraction to a more acceptable value. This is relevant for ingress/egress fitting for ingress/egress with just Rp/Rs
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,args=[self.param_list_free],threads=nthreads,moves=emcee.moves.StretchMove(10))
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads,moves=emcee.moves.StretchMove(10))
 
         # run chains
         print('################')
@@ -379,6 +300,7 @@ class Sampling(object):
                 samples = sampler.get_chain(discard=ndiscard, thin=10, flat=True)
         else:
             samples = sampler.chain[:, -100:, :].reshape((-1, npars))
+        self.samples = samples
 
         print('\n')
         # generate median, upper and lower bounds
@@ -388,6 +310,8 @@ class Sampling(object):
             # generate and save corner plot
             samples_corner = samples
             pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
+         
+        self.best_fit_values = med
 
         for ilc,lc in enumerate(self.lightcurve_list):
             if len(self.lightcurve_list)>1:
@@ -396,12 +320,6 @@ class Sampling(object):
                 lc_theta = med
             lc.update_model(lc_theta)
             print(f'testing lc 1: {lc.systematic_model.poly_used}')
-        
-        upper_lightcurve_list = copy.deepcopy(self.lightcurve_list)
-        lower_lightcurve_list = copy.deepcopy(self.lightcurve_list)
-
-        upper = up
-        lower = low
 
         for ilc,lc in enumerate(upper_lightcurve_list):
             if len(upper_lightcurve_list)>1:
@@ -417,16 +335,12 @@ class Sampling(object):
                 lc_theta = upper
             lc.update_model(lc_theta)
 
-        write_fit_diagnostics(self,wavelength_bin,emcee_fit=True,burn=burn,emcee_sampler=sampler,nsteps=nsteps)
-
-        if not burn:
-            for ilc,lc in enumerate(self.lightcurve_list):
-                pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
-
         if burn:
-            print("...burn-in complete for bin %d"%(wavelength_bin+1))
+          print("...burn-in complete for bin %d"%(wavelength_bin+1))
         else:
-            print("...production complete for bin %d"%(wavelength_bin+1))
+          for ilc,lc in enumerate(self.lightcurve_list):
+                pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
+          print("...production complete for bin %d"%(wavelength_bin+1))            
 
         sampler.reset()
 
@@ -465,6 +379,7 @@ class Sampling(object):
 
         # Run Levenberg-Marquardt fit
         result = optimize.least_squares(residuals, theta0, method='lm')
+        self.sampler_results = result
 
         # Update model with best-fit parameters for all lightcurves
         for ilc, lc in enumerate(self.lightcurve_list):
@@ -482,8 +397,6 @@ class Sampling(object):
         except:
             print("Unable to estimate uncertainties from Jacobian")
             uncertainties = np.zeros_like(result.x)
-
-        write_fit_diagnostics(self,wavelength_bin,LM_fit=True)
         
         # Save results for each lightcurve
         for ilc, lc in enumerate(self.lightcurve_list):
@@ -614,11 +527,20 @@ class Sampling(object):
     def BIC(self, theta=None):
         # note we can use loglikelihood_emcee also for LM fit since the statistic is independent of the sampling method
         npars = len(self.param_list_free)
-        return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood_emcee(theta,self.param_list_free)
+    
+        if theta is None:
+            theta = self.best_fit_values
+          
+        return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood(theta)
 
     def AIC(self, theta=None):
+      
         npars = len(self.param_list_free)
-        return 2 * npars - 2 * self.loglikelihood_emcee(theta,self.param_list_free)
+        
+        if theta is None:
+            theta = self.best_fit_values
+            
+        return 2 * npars - 2 * self.loglikelihood(theta)
 
     def red_noise_beta(self, theta=None):
         # Get the RMS of the residuals using the existing function
@@ -648,193 +570,314 @@ class Sampling(object):
 
         return beta_factor
 
-# def save_dynesty_results(self, wb, output_foldername, verbose):
+    def save_results(self, wb, output_foldername, verbose):
+        if self.sampling_method == 'dynesty':
+            self.save_dynesty_results(wb, output_foldername, verbose)
+        if self.sampling_method == 'emcee':  
+            self.save_emcee_results(wb, output_foldername, verbose)
 
-#     pickle.dump(self.sampler_results, open(output_foldername + '/pickled_objects/' + 'dynesty_result_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+        if self.sampling_method == 'LM':
+            # Estimate uncertainties from covariance matrix
+            try:
+                J = result.jac
+                cov = np.linalg.inv(J.T.dot(J))*self.reducedChisq()
+                uncertainties = np.sqrt(np.diag(cov))
+            except:
+                print("Unable to estimate uncertainties from Jacobian")
+                uncertainties = np.zeros_like(result.x)
+            self.save_LM_results(self.lightcurve,self.sampler_results.x,uncertainties,wb,output_foldername,verbose=verbose)
+        return
+    
+    def save_emcee_results(self, wavelength_bin, output_foldername, verbose):
 
-#     # from dynesty import utils as dyfunc
-#     samples, weights = self.sampler_results.samples, self.sampler_results.importance_weights()
-#     # mean, cov = dyfunc.mean_and_cov(samples, weights)
-#     equal_weights_samples = self.sampler_results.samples_equal()
+        med, up, low, mode = self.recover_quartiles_single(samples,bin_number=(wavelength_bin+1),verbose=verbose,save_result=True,burn=False)
+        self.best_fit_values = med
 
-#     pickle.dump(samples, open(output_foldername + '/pickled_objects/' + 'dynesty_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-#     pickle.dump(weights, open(output_foldername + '/pickled_objects/' + 'dynesty_weights_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-#     pickle.dump(equal_weights_samples, open(output_foldername + '/pickled_objects/' + 'dynesty_equal_weights_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-
-#     namelist = self.param_list_free
-#     medians = []
-#     up_err = []
-#     low_err = []
-#     for i in range(len(namelist)):
-#         medians.append(np.percentile(equal_weights_samples.T[i], 50))
-#         up_err.append(np.percentile(equal_weights_samples.T[i], 84) - medians[i])
-#         low_err.append(medians[i] - np.percentile(equal_weights_samples.T[i], 16))
-#     self.best_fit_values = medians
-
-#     if wb == 0:
-#         new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
-#     else:
-#         new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
-
-#     print('\nSaving best fit parameters to table...\n')
-
-#     for i in range(self.nDims):
-#         # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
-#         new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
-
-#         if verbose:
-#             print("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
-
-#     new_tab.write('#------------------ \n')
-#     new_tab.close()
-
-#     ## plotting
-#     from dynesty import plotting as dyplot
-#     ## maybe move the corner plot somewhere else
-#     fig, ax = dyplot.cornerplot(self.sampler_results, color='dodgerblue',
-#                             truth_color='black', show_titles=True,
-#                             quantiles=None, max_n_ticks=3)
-#     plt.savefig(output_foldername + '/Figures/' + 'dynesty_corner_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
-
-#     fig, axes = dyplot.traceplot(self.sampler_results,
-#                                 truth_color='black', show_titles=True,
-#                                 trace_cmap='viridis', connect=True,
-#                                 connect_highlight=range(5))
-#     plt.savefig(output_foldername + '/Figures/' + 'dynesty_trace_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
-#     return
+        # generate and save corner plot
+        samples_corner = self.samples
+        pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=self.param_list_free,parameter_modes=mode)
+        return
 
 
+    def save_dynesty_results(self, wb, output_foldername, verbose):
+        pickle.dump(self.sampler_results, open(output_foldername + '/pickled_objects/' + 'dynesty_result_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
 
-def save_LM_results(fitted_lightcurve,param_medians,param_uncertainties,bin_number,verbose=True):
-    """Function to save the results from an LM fit to a best_fit_parameters.dat and LM_statistics.dat tables equivalent to emcee results.
+        # from dynesty import utils as dyfunc
+        samples, weights = self.sampler_results.samples, self.sampler_results.importance_weights()
+        # mean, cov = dyfunc.mean_and_cov(samples, weights)
+        equal_weights_samples = self.sampler_results.samples_equal()
 
-    Inputs:
-    fitted_lightcurve - the best fitting, resulting, Lightcurvemodel object
-    param_medians - the best fitting parameters
-    param_uncertainties - the 1 sigma uncertainties on the parameters
-    bin_number - the bin number (correcting for Python indexing, i.e. adding 1)
-    verbose - True/False - print the best-fitting results to terminal?
+        pickle.dump(samples, open(output_foldername + '/pickled_objects/' + 'dynesty_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+        pickle.dump(weights, open(output_foldername + '/pickled_objects/' + 'dynesty_weights_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+        pickle.dump(equal_weights_samples, open(output_foldername + '/pickled_objects/' + 'dynesty_equal_weights_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
 
-    Returns:
-    Nothing but saving the results to best_fit_parameters.dat and LM_statistics.txt"""
+        namelist = self.param_list_free
+        medians = []
+        up_err = []
+        low_err = []
+        for i in range(len(namelist)):
+            medians.append(np.percentile(equal_weights_samples.T[i], 50))
+            up_err.append(np.percentile(equal_weights_samples.T[i], 84) - medians[i])
+            low_err.append(medians[i] - np.percentile(equal_weights_samples.T[i], 16))
+        self.best_fit_values = medians
 
-    ndim = len(param_medians)
-    namelist = fitted_lightcurve.param_list_free
-
-    if bin_number == 0:
-        new_tab = open('best_fit_parameters.txt','w')
-    else:
-        new_tab = open('best_fit_parameters.txt','a')
-
-    print('\nSaving best fit parameters to table...\n')
-
-    for i in range(ndim):
-        # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
-        new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),bin_number+1,param_medians[i],param_uncertainties[i],param_uncertainties[i]))
-
-        if verbose:
-            print("%s_%d = %f +/- %f"%(namelist[i].replace('$','').replace("\\",''),bin_number+1,param_medians[i],param_uncertainties[i]))
-
-    new_tab.write('#------------------ \n')
-    new_tab.close()
-
-    return
-
-
-def write_fit_diagnostics(sampling_model,wavelength_bin,emcee_fit=False,burn=False,LM_fit=False,dynesty_fit=False,emcee_sampler=None,nsteps=None):
-
-    if wavelength_bin == 0:
-        read_mode = 'w'
-    else:
-        read_mode = 'a'
-
-    if emcee_fit:
-
-        if burn:
-            diagnostic_tab = open('burn_statistics.txt',read_mode)
+        if wb == 0:
+            new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
         else:
-            diagnostic_tab = open('prod_statistics.txt',read_mode)
+            new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
 
-    if LM_fit:
+        print('\nSaving best fit parameters to table...\n')
 
-        diagnostic_tab = open('LM_statistics.txt',read_mode)
-    
-    if dynesty_fit:
-        diagnostic_tab = open('dynesty_statistics.txt',read_mode)
+        for i in range(self.nDims):
+            # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
+            new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
 
-    fitted_chi2        = sampling_model.chisq() # returns dictionary
-    fitted_reducedChi2 = sampling_model.reducedChisq() # returns dictionary
-    fitted_rms         = sampling_model.rms() # returns dictionary
-    fitted_BIC         = sampling_model.BIC() # returns float
-    fitted_AIC         = sampling_model.AIC() # returns float
+            if verbose:
+                print("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
 
-    print('\nCalculating statistics for best fit...')
-    if sampling_model.nlightcurves > 1:
-        print("\n" + "="*40)
-        print("Joint fit statistics")
-        print("="*40)
+        new_tab.write('#------------------ \n')
+        new_tab.close()
 
-        print("\nGlobal statistics:")
-        print('Total chi2 = %.3f' % fitted_chi2[f'total'])
-        print('Total reduced chi2 = %.3f' % fitted_reducedChi2[f'total'])
+        ## plotting
+        from dynesty import plotting as dyplot
+        ## maybe move the corner plot somewhere else
+        fig, ax = dyplot.cornerplot(self.sampler_results, color='dodgerblue',
+                                truth_color='black', show_titles=True,
+                                quantiles=None, max_n_ticks=3)
+        plt.savefig(output_foldername + '/Figures/' + 'dynesty_corner_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
 
-    print('BIC = %f' % fitted_BIC) # global (joint likelihood)
-    print('AIC = %f' % fitted_AIC) # global
-    
-    print("\nIndividual light curve statistics:")
-    for ilc,lc in enumerate(sampling_model.lightcurve_list):
-        print(f'LC {ilc}')
-        print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
-        print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
-        print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
+        fig, axes = dyplot.traceplot(self.sampler_results,
+                                    truth_color='black', show_titles=True,
+                                    trace_cmap='viridis', connect=True,
+                                    connect_highlight=range(5))
+        plt.savefig(output_foldername + '/Figures/' + 'dynesty_trace_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
+        return
+
+
+    def save_LM_results(self,param_medians,param_uncertainties,bin_number,output_foldername,verbose=True):
+        """Function to save the results from an LM fit to a best_fit_parameters.dat and LM_statistics.dat tables equivalent to emcee results.
+
+        Inputs:
+        fitted_lightcurve - the best fitting, resulting, Lightcurvemodel object
+        param_medians - the best fitting parameters
+        param_uncertainties - the 1 sigma uncertainties on the parameters
+        bin_number - the bin number (correcting for Python indexing, i.e. adding 1)
+        verbose - True/False - print the best-fitting results to terminal?
+
+        Returns:
+        Nothing but saving the results to best_fit_parameters.dat and LM_statistics.txt"""
+
+        ndim = len(param_medians)
+        namelist = self.param_list_free
+
+        if bin_number == 0:
+            new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
+        else:
+            new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
+
+        print('\nSaving best fit parameters to table...\n')
+
+        for i in range(ndim):
+            # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
+            new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),bin_number+1,param_medians[i],param_uncertainties[i],param_uncertainties[i]))
+
+            if verbose:
+                print("%s_%d = %f +/- %f"%(namelist[i].replace('$','').replace("\\",''),bin_number+1,param_medians[i],param_uncertainties[i]))
+
+        new_tab.write('#------------------ \n')
+        new_tab.close()
+
+        return
+
+
+    def write_fit_diagnostics(self,wavelength_bin,output_foldername, emcee_fit=False,burn=False,dynesty_fit=False,LM_fit=False,emcee_sampler=None,nsteps=None):
+
+        if wavelength_bin == 0:
+            read_mode = 'a'
+        else:
+            read_mode = 'w'
+
+        if self.sampling_method == 'emcee':
+
+            if burn:
+                diagnostic_tab = open(output_foldername+'burn_statistics.txt',read_mode)
+            else:
+                diagnostic_tab = open(output_foldername+'prod_statistics.txt',read_mode)
+
+        if self.sampling_method == 'LM':
+
+            diagnostic_tab = open(output_foldername+'LM_statistics.txt',read_mode)
         
+        if self.sampling_method == 'dynesty':
+            diagnostic_tab = open(output_foldername+'dynesty_statistics.txt',read_mode)
+            
+        fitted_chi2 = self.chisq()
+        fitted_reducedChi2 = self.reducedChisq()
+        fitted_rms = self.rms()*1e6
+        fitted_BIC = self.BIC()
+        fitted_AIC = self.AIC()
+
+        print('\nCalculating statistics for best fit...')
+        if sampling_model.nlightcurves > 1:
+            print("\n" + "="*40)
+            print("Joint fit statistics")
+            print("="*40)
+
+            print("\nGlobal statistics:")
+            print('Total chi2 = %.3f' % fitted_chi2[f'total'])
+            print('Total reduced chi2 = %.3f' % fitted_reducedChi2[f'total'])
+
+        print('BIC = %f' % fitted_BIC) # global (joint likelihood)
+        print('AIC = %f' % fitted_AIC) # global
     
+        print("\nIndividual light curve statistics:")
+        for ilc,lc in enumerate(sampling_model.lightcurve_list):
+            print(f'LC {ilc}')
+            print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
+            print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
+            print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
+		
+		diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
+        if sampling_model.nlightcurves > 1:
+            diagnostic_tab.write("--- Joint fit statistics ---\n")
 
-    diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
-    if sampling_model.nlightcurves > 1:
-        diagnostic_tab.write("--- Joint fit statistics ---\n")
+            diagnostic_tab.write("Global statistics:")
+            diagnostic_tab.write('Total chi2 = %.3f \n' % fitted_chi2[f'total'])
+            diagnostic_tab.write('Total reduced chi2 = %.3f \n' % fitted_reducedChi2[f'total'])
 
-        diagnostic_tab.write("Global statistics:")
-        diagnostic_tab.write('Total chi2 = %.3f \n' % fitted_chi2[f'total'])
-        diagnostic_tab.write('Total reduced chi2 = %.3f \n' % fitted_reducedChi2[f'total'])
+        diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
+        diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
 
-    diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
-    diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
+        if sampling_model.nlightcurves > 1:
+            diagnostic_tab.write("Individual light curve statistics:\n")
 
-    if sampling_model.nlightcurves > 1:
-        diagnostic_tab.write("Individual light curve statistics:\n")
+        for ilc,lc in enumerate(sampling_model.lightcurve_list):
+            diagnostic_tab.write('Residual RMS (ppm) = %d \n' % (fitted_rms[f'lc{ilc}']*1e6))
 
-    for ilc,lc in enumerate(sampling_model.lightcurve_list):
-        diagnostic_tab.write('Residual RMS (ppm) = %d \n' % (fitted_rms[f'lc{ilc}']*1e6))
-        
+        if self.sampling_method == 'dynesty':
+            print(self.sampler_results.summary())
+            import sys
+            o = sys.stdout
+            # Redirect stdout to a file
+            sys.stdout = diagnostic_tab
+            print(self.sampler_results.summary())
+            sys.stdout = o
 
-    if emcee_sampler is not None:
-        try:
-            print(f'\nFree parameters = {sampling_model.param_list_free}')
-            print('Autocorrelation time for each parameter = ',np.round(emcee_sampler.acor).astype(int))
-            # Alternatively something like: emcee.autocorr.integrated_time(sampler.chain, low=10, high=None, step=1, c=5, full_output=True,axis=0, fast=False)
-            diagnostic_tab.write('\nAutocorrelation time for each parameter = ')
-            for ac in np.round(emcee_sampler.acor).astype(int):
-                diagnostic_tab.write('%d '%ac)
-            diagnostic_tab.write('\n')
+        if emcee_sampler is not None:
+            try:
+                print('\nAutocorrelation time for each parameter = ',np.round(emcee_sampler.acor).astype(int))
+                # Alternatively something like: emcee.autocorr.integrated_time(sampler.chain, low=10, high=None, step=1, c=5, full_output=True,axis=0, fast=False)
+                diagnostic_tab.write('\nAutocorrelation time for each parameter = ')
+                for ac in np.round(emcee_sampler.acor).astype(int):
+                    diagnostic_tab.write('%d '%ac)
+                diagnostic_tab.write('\n')
 
-            print('nsamples/median(autocorrelation time) = %d'%np.round(nsteps/np.median(emcee_sampler.acor)))
-            diagnostic_tab.write('nsamples/median(autocorrelation time) = %d \n'%(np.round(nsteps/np.median(emcee_sampler.acor))))
-        except:
-            print("\nAutocorrelation time can't be calculated - chains likely too short")
-            diagnostic_tab.write("\nAutocorrelation time can't be calculated - chains likely too short \n")
+                print('nsamples/median(autocorrelation time) = %d'%np.round(nsteps/np.median(emcee_sampler.acor)))
+                diagnostic_tab.write('nsamples/median(autocorrelation time) = %d \n'%(np.round(nsteps/np.median(emcee_sampler.acor))))
+            except:
+                print("\nAutocorrelation time can't be calculated - chains likely too short")
+                diagnostic_tab.write("\nAutocorrelation time can't be calculated - chains likely too short \n")
 
-        print('Acceptance fraction = %f'%(np.mean(emcee_sampler.acceptance_fraction)))
+            print('Acceptance fraction = %f'%(np.mean(emcee_sampler.acceptance_fraction)))
 
-        diagnostic_tab.write('Acceptance fraction = %f \n'%(np.mean(emcee_sampler.acceptance_fraction)))
-        diagnostic_tab.write('Total steps = %d \n'%(nsteps))
+            diagnostic_tab.write('Acceptance fraction = %f \n'%(np.mean(emcee_sampler.acceptance_fraction)))
+            diagnostic_tab.write('Total steps = %d \n'%(nsteps))
 
-    diagnostic_tab.write('#------------------ \n')
-    diagnostic_tab.close()
-
+        diagnostic_tab.write('#------------------ \n')
+        diagnostic_tab.close()
 
 
-def update_prior_file(input_prior_file, best_fit_file="best_fit_parameters.txt"):
+    def recover_quartiles_single(self,samples,bin_number,verbose=True,save_result=False,burn=False):
+        """
+        Function that calculates the 16th, 50th and 84th percentiles from a numpy array / emcee chain and saves these to a table.
+
+        Inputs:
+        samples - the samples/chains from emcee
+        namelist - the names of the parameters that were fit - needed for printing and saving to file
+        bin_number - the number of the wavelength bin we're considering. Necessary for printing and saving to file.
+        verbose - True/False: do we want to print the results to screen?
+        save_result - True/False: do we want to save the results to a table?
+        burn - True/False: is this a burn-in chain? If so, save to burn_parameters.dat, else save to best_fit_parameters.dat
+
+        Returns:
+        (median, upper bound, lower bound) with shape (nparameters,3)
+        """
+
+        namelist = self.param_list_free
+        lower = []
+        median = []
+        upper = []
+        mode = []
+
+        ndim = np.shape(samples)[1] # this is equal to the number of params
+
+        length_nl = len(namelist)
+
+        # generate dictionary of how many decimal places we want to round each parameter to before calculating the mode of the rounded distribution
+        namelist_decimal_places = {"t0":6,"per":6,"rp":6,"a":2,"inc":2,"ecc":3,"w":2,\
+                                "u1":2,"u2":2,"u3":2,"u4":2,"f":4,"s":3,"A":3,"step1":3,"step2":3,"breakpoint":0,"lniL":2,
+                                "infl":3}
+
+        # now pad the dictionray with the systematics coefficients which could be a large number of parameters (although much less than the 100 allowed for below)
+        for i in range(100):
+            namelist_decimal_places["r%s"%(i)] = 2
+            namelist_decimal_places["c%s"%(i)] = 6
+            namelist_decimal_places["lniL_%s"%(i)] = 2
+
+        if save_result:
+            if bin_number == 1:
+                if burn:
+                    new_tab = open('burn_parameters.txt','w')
+                    # new_tab_2 = open('parameter_modes_burn.txt','w')
+                else:
+                    new_tab = open('best_fit_parameters.txt','w')
+                    new_tab_2 = open('parameter_modes_prod.txt','w')
+            else:
+                if burn:
+                    new_tab = open('burn_parameters.txt','a')
+                    # new_tab_2 = open('parameter_modes_burn.txt','a')
+                else:
+                    new_tab = open('best_fit_parameters.txt','a')
+                    new_tab_2 = open('parameter_modes_prod.txt','a')
+
+        for i in range(ndim):
+            par = samples[:,i]
+            lolim,best,uplim = np.percentile(par,[16,50,84])
+            lower.append(lolim)
+            median.append(best)
+            upper.append(uplim)
+
+            # calculate mode of rounded sample array
+            key = namelist[i].replace('$','').replace("\\",'')
+            key = key.split("_")[0]
+            rounded_par = np.round(par,namelist_decimal_places[key])
+            mode_value, mode_count = stats.mode(rounded_par,keepdims=True)
+            mode.append(mode_value[0])
+
+            if save_result:
+                new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,best,uplim-best,best-lolim))
+                if not burn:
+                    new_tab_2.write("%s_%d = %f (%d counts = %d%%) \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,mode_value[0],mode_count[0],100*mode_count[0]/len(par)))
+
+            if verbose:
+                print("%s_%d = %f + %f - %f"%(namelist[i].replace('$','').replace("\\",''),bin_number,best,uplim-best,best-lolim))
+                if not burn:
+                    print("%s_%d (mode of posterior) = %f (%d counts = %.2f%%) \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,mode_value[0],mode_count[0],100*mode_count[0]/len(par)))
+
+        if save_result:
+            print('\nSaving best fit parameters to table...\n')
+            new_tab.write('#------------------ \n')
+            new_tab.close()
+
+            if not burn:
+                new_tab_2.write('#------------------ \n')
+                new_tab_2.close()
+
+        return np.array(median),np.array(upper),np.array(lower),np.array(mode)
+
+
+
+def update_prior_file(input_prior_file, output_foldername, wb, best_fit_file="best_fit_parameters.txt"):
     """
     Create a new prior file where values are replaced by best-fit medians and uncertainties.
 
@@ -853,7 +896,7 @@ def update_prior_file(input_prior_file, best_fit_file="best_fit_parameters.txt")
     # Load best-fit parameters
     # -------------------------------------------
     bestfit = {}
-    with open(best_fit_file, "r") as bf:
+    with open(output_foldername + best_fit_file, "r") as bf:
         for line in bf:
             if "=" not in line:
                 continue
@@ -871,7 +914,7 @@ def update_prior_file(input_prior_file, best_fit_file="best_fit_parameters.txt")
     # -------------------------------------------
     # Output file
     # -------------------------------------------
-    new_prior_file = input_prior_file.replace(".txt", "_wb.txt")
+    new_prior_file = input_prior_file.replace(".txt", "_fitted_wb%s.txt"%(str(wb+1).zfill(4)))
 
     # Parameters that must be fixed
     force_fix = {"t0", "a", "inc", "per"}
@@ -959,91 +1002,3 @@ def update_prior_file(input_prior_file, best_fit_file="best_fit_parameters.txt")
             outfile.write("    ".join(newcols) + "\n")
 
     return new_prior_file
-
-
-
-def recover_quartiles_single(samples,namelist,bin_number,verbose=True,save_result=False,burn=False):
-    """
-    Function that calculates the 16th, 50th and 84th percentiles from a numpy array / emcee chain and saves these to a table.
-
-    Inputs:
-    samples - the samples/chains from emcee
-    namelist - the names of the parameters that were fit - needed for printing and saving to file
-    bin_number - the number of the wavelength bin we're considering. Necessary for printing and saving to file.
-    verbose - True/False: do we want to print the results to screen?
-    save_result - True/False: do we want to save the results to a table?
-    burn - True/False: is this a burn-in chain? If so, save to burn_parameters.dat, else save to best_fit_parameters.dat
-
-    Returns:
-    (median, upper bound, lower bound) with shape (nparameters,3)
-    """
-    lower = []
-    median = []
-    upper = []
-    mode = []
-
-    ndim = np.shape(samples)[1] # this is equal to the number of params
-
-    length_nl = len(namelist)
-
-    # generate dictionary of how many decimal places we want to round each parameter to before calculating the mode of the rounded distribution
-    namelist_decimal_places = {"t0":6,"per":6,"rp":6,"a":2,"inc":2,"ecc":3,"w":2,\
-                               "u1":2,"u2":2,"u3":2,"u4":2,"f":4,"s":3,"A":3,"step1":3,"step2":3,"breakpoint":0,"lniL":2,
-                               "infl":3}
-
-    # now pad the dictionray with the systematics coefficients which could be a large number of parameters (although much less than the 100 allowed for below)
-    for i in range(100):
-        namelist_decimal_places["r%s"%(i)] = 2
-        namelist_decimal_places["c%s"%(i)] = 6
-        namelist_decimal_places["lniL_%s"%(i)] = 2
-
-    if save_result:
-        if bin_number == 1:
-            if burn:
-                new_tab = open('burn_parameters.txt','w')
-                # new_tab_2 = open('parameter_modes_burn.txt','w')
-            else:
-                new_tab = open('best_fit_parameters.txt','w')
-                new_tab_2 = open('parameter_modes_prod.txt','w')
-        else:
-            if burn:
-                new_tab = open('burn_parameters.txt','a')
-                # new_tab_2 = open('parameter_modes_burn.txt','a')
-            else:
-                new_tab = open('best_fit_parameters.txt','a')
-                new_tab_2 = open('parameter_modes_prod.txt','a')
-
-    for i in range(ndim):
-        par = samples[:,i]
-        lolim,best,uplim = np.percentile(par,[16,50,84])
-        lower.append(lolim)
-        median.append(best)
-        upper.append(uplim)
-
-        # calculate mode of rounded sample array
-        key = namelist[i].replace('$','').replace("\\",'')
-        key = key.split("_")[0]
-        rounded_par = np.round(par,namelist_decimal_places[key])
-        mode_value, mode_count = stats.mode(rounded_par,keepdims=True)
-        mode.append(mode_value[0])
-
-        if save_result:
-            new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,best,uplim-best,best-lolim))
-            if not burn:
-                new_tab_2.write("%s_%d = %f (%d counts = %d%%) \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,mode_value[0],mode_count[0],100*mode_count[0]/len(par)))
-
-        if verbose:
-            print("%s_%d = %f + %f - %f"%(namelist[i].replace('$','').replace("\\",''),bin_number,best,uplim-best,best-lolim))
-            if not burn:
-                print("%s_%d (mode of posterior) = %f (%d counts = %.2f%%) \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,mode_value[0],mode_count[0],100*mode_count[0]/len(par)))
-
-    if save_result:
-        print('\nSaving best fit parameters to table...\n')
-        new_tab.write('#------------------ \n')
-        new_tab.close()
-
-        if not burn:
-            new_tab_2.write('#------------------ \n')
-            new_tab_2.close()
-
-    return np.array(median),np.array(upper),np.array(lower),np.array(mode)
