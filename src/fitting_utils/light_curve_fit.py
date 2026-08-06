@@ -234,7 +234,9 @@ def construct_lightcurves(ilightcurve, wb):
     
     if model_inputs['transit_model']['use_generated_ld_as_prior'] or model_inputs['transit_model']['use_generated_ld']:
         try:
-            model_inputs['transit_model']['LDCs_generated'] = np.loadtxt(output_foldername + '/' + f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
+            # This forces np.loadtxt to always has 2 dimensions (even if only 1 row is present)
+            ldcs_table = np.loadtxt(output_foldername + '/' + f'LD_coefficients_lc{ilightcurve}.txt', ndmin=2)
+            model_inputs['transit_model']['LDCs_generated'] = ldcs_table[wb]
         except:
             raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
             
@@ -397,7 +399,7 @@ for ilc,lc in enumerate(fitted_lightcurve_list):
     pickle.dump(lc,open(output_foldername + '/pickled_objects/' + f'fitted_lightcurve_model_lc{ilc}_wb{str(wb+1).zfill(4)}.pickle','wb'))
 
 pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
-                            save_folder=output_foldername)
+                            save_folder=output_foldername, sigma=1)
 
 for i in range(nlc):
     _time = lightcurve_objects[i].time_array
