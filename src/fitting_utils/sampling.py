@@ -23,7 +23,7 @@ from dynesty import plotting as dyplot
 from dynesty.utils import resample_equal
 
 class Sampling(object):
-    def __init__(self,lightcurve_list,sampling_arguments,sampling_method):
+    def __init__(self, lightcurve_list, sampling_arguments, sampling_method, output_foldername):
 
         """
 
@@ -44,9 +44,10 @@ class Sampling(object):
         self.nlightcurves    = len(lightcurve_list)
         self.sampling_method = sampling_method
         self.sampling_arguments = sampling_arguments
+        self.output_foldername = output_foldername
 
         if sampling_method =='emcee' or sampling_method =='LM' or sampling_method == 'dynesty':
-            # Only written for emcee, LM, and dynesty at the moment
+
             self.joint_fitter = jf.JointFitter(lightcurve_list,verbose=True)
 
             self.param_dict      = self.joint_fitter.param_dict_global
@@ -58,7 +59,6 @@ class Sampling(object):
 
         else:
             self.lightcurve = lightcurve_list[0]
-            # Evie's original
             self.param_dict      = self.lightcurve.param_dict
             self.param_list_free = self.lightcurve.param_list_free
             self.prior_dict      = self.lightcurve.prior_dict
@@ -107,7 +107,10 @@ class Sampling(object):
         return logL_total
 
 
-    def run_dynesty(self, wavelength_bin=0):
+    def run_dynesty(self, wavelength_bin=0, median_update=True):
+
+        # For statistics
+        self.best_fit_median = median_update
 
         namelist = self.param_list_free
 
@@ -121,20 +124,31 @@ class Sampling(object):
         sampler.run_nested(dlogz=precision_criterion, print_progress=True)
         self.sampler_results = sampler.results
 
-        med, up, low, mode = recover_quartiles_single(posterior_samples,namelist,bin_number=(wavelength_bin+1),
-                                                      verbose=True,save_result=True,burn=False)
-        
-        self.best_fit_values = med
-        
+        # Get equal weight sampels
+        self.samples = self.sampler_results.samples_equal()
+
+        # Get sample with highest likelihood
+        logl = self.sampler_results['logl']
+        best_idx = np.argmax(logl)
+        self.best_fit_values_logl = self.sampler_results.samples[best_idx]
+
+        # Get median values
+        _, _, med, _, _ = self.get_confidence_interval(wavelength_bin)
+        self.best_fit_values_median = med
+
+        # Decide which values to update the fitted lightcurve
+        if median_update:
+            best_val = self.best_fit_values_median
+        else:
+            best_val = self.best_fit_values_logl
+
+        # Update fitted lightcurve
         for ilc,lc in enumerate(self.lightcurve_list):
             if len(self.lightcurve_list)>1:
-                lc_theta, _ = self.joint_fitter.map_theta(med,ilc,namelist)
+                lc_theta, _ = self.joint_fitter.map_theta(best_val,ilc,namelist)
             else:
-                lc_theta = med
+                lc_theta = best_val
             lc.update_model(lc_theta)
-        
-        for ilc,lc in enumerate(self.lightcurve_list):
-                pickle.dump(lc,open(f'fitted_lightcurve_model_lc{ilc}_wb{str(wavelength_bin+1).zfill(4)}.pickle','wb'))
 
         return self.lightcurve_list
 
@@ -213,6 +227,7 @@ class Sampling(object):
         npars    = len(self.param_list_free)
         namelist = self.param_list_free
         nwalkers_total = nwalkers * npars
+        self.burn = burn
 
         # Scatter walkers around starting parameters
         starting_values = np.array([self.param_dict[k].currVal for k in self.param_list_free])
@@ -226,7 +241,8 @@ class Sampling(object):
         if npars > 1:
             sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads)
         else: # from my own tests I find that for a single parameter, the acceptance fraction is too high. Increasing the stretch scale factor decreases the acceptance fraction to a more acceptable value. This is relevant for ingress/egress fitting for ingress/egress with just Rp/Rs
-            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads,moves=emcee.moves.StretchMove(10))
+            sampler = emcee.EnsembleSampler(nwalkers_total,npars,self.logprobability_emcee,threads=nthreads,
+                                            moves=emcee.moves.StretchMove(10))
 
         # run chains
         print('################')
@@ -289,29 +305,22 @@ class Sampling(object):
         else:
             sampler, highest_prob_pars, highest_prob = self.advance_chain(sampler,p0,nsteps,burn,save_chain,wavelength_bin)
 
-        # save plots of chains
-        pu.plot_chains(sampler,burn,wavelength_bin,npars,namelist,ndiscard)
+        self.sampler_mcmc = sampler
 
         if nsteps >= 500:
             if burn:
-                samples = sampler.chain[:, int(nsteps/2):, :].reshape((-1, ndim))
+                samples = sampler.chain[:, int(nsteps/2):, :].reshape((-1, npars))
             else:
                 # samples = sampler.get_chain(discard=int(nsteps/4), thin=10, flat=True)
                 samples = sampler.get_chain(discard=ndiscard, thin=10, flat=True)
         else:
             samples = sampler.chain[:, -100:, :].reshape((-1, npars))
+
         self.samples = samples
 
         print('\n')
-        # generate median, upper and lower bounds
-        med, up, low, mode = recover_quartiles_single(samples,namelist,bin_number=(wavelength_bin+1),verbose=True,save_result=True,burn=burn)
-        
-        if not burn and npars > 1:
-            # generate and save corner plot
-            samples_corner = samples
-            pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=namelist,parameter_modes=mode)
-         
-        self.best_fit_values = med
+        _, _, med, _, _ = self.get_confidence_interval(wavelength_bin, equal_prob=True)
+        self.best_fit_values_median = med
 
         for ilc,lc in enumerate(self.lightcurve_list):
             if len(self.lightcurve_list)>1:
@@ -320,20 +329,6 @@ class Sampling(object):
                 lc_theta = med
             lc.update_model(lc_theta)
             print(f'testing lc 1: {lc.systematic_model.poly_used}')
-
-        for ilc,lc in enumerate(upper_lightcurve_list):
-            if len(upper_lightcurve_list)>1:
-                lc_theta, _ = self.joint_fitter.map_theta(upper,ilc,namelist)
-            else:
-                lc_theta = upper
-            lc.update_model(lc_theta)
-        
-        for ilc,lc in enumerate(lower_lightcurve_list):
-            if len(upper_lightcurve_list)>1:
-                lc_theta, _ = self.joint_fitter.map_theta(lower,ilc,namelist)
-            else:
-                lc_theta = upper
-            lc.update_model(lc_theta)
 
         if burn:
           print("...burn-in complete for bin %d"%(wavelength_bin+1))
@@ -344,7 +339,7 @@ class Sampling(object):
 
         sampler.reset()
 
-        return self.lightcurve_list, upper_lightcurve_list, lower_lightcurve_list
+        return self.lightcurve_list
     
     ### -------- Levenberg-Marquadt methods -------- ###
     def run_LM(self,wavelength_bin=0):
@@ -398,10 +393,6 @@ class Sampling(object):
             print("Unable to estimate uncertainties from Jacobian")
             uncertainties = np.zeros_like(result.x)
         
-        # Save results for each lightcurve
-        for ilc, lc in enumerate(self.lightcurve_list):
-            save_LM_results(lc, result.x, uncertainties, wavelength_bin, verbose=True)
-
         return self.lightcurve_list
 
 
@@ -454,6 +445,7 @@ class Sampling(object):
         Returns:
         chisq_dict         - dict, 'total' chisquare across all lightcurves, 'lc0' for lightcurve 0 etc..
         """
+        
         if theta is not None:
             for ilc, lc in enumerate(self.lightcurve_list):
                 if theta is not None:
@@ -463,9 +455,9 @@ class Sampling(object):
                         lc_theta = theta
                     lc.update_model(lc_theta)
 
-
         chisq_dict = {}
         total_chisq = 0.0
+
         for ilc, lc in enumerate(self.lightcurve_list):
             if lc.GP_used:
                 mu, _ = lc.calc_gp_component()
@@ -529,7 +521,10 @@ class Sampling(object):
         npars = len(self.param_list_free)
     
         if theta is None:
-            theta = self.best_fit_values
+            if self.best_fit_median:
+                theta = self.best_fit_values_median
+            else:
+                theta = self.best_fit_values_logl
           
         return npars * np.log(sum(len(lc.flux_array) for lc in self.lightcurve_list)) - 2 * self.loglikelihood(theta)
 
@@ -538,12 +533,23 @@ class Sampling(object):
         npars = len(self.param_list_free)
         
         if theta is None:
-            theta = self.best_fit_values
+            if self.best_fit_median:
+                theta = self.best_fit_values_median
+            else:
+                theta = self.best_fit_values_logl
             
-        return 2 * npars - 2 * self.loglikelihood(theta)
+        return 2 * npars - 2 * self.loglikelihood(theta)    
 
     def red_noise_beta(self, theta=None):
+
         # Get the RMS of the residuals using the existing function
+
+        if theta is None:
+            if self.best_fit_median:
+                theta = self.best_fit_values_median
+            else:
+                theta = self.best_fit_values_logl
+
         rms_dict = self.rms(theta)
 
         for ilc,lc in enumerate(self.lightcurve_list):
@@ -570,91 +576,85 @@ class Sampling(object):
 
         return beta_factor
 
-    def save_results(self, wb, output_foldername, verbose):
+    def save_results(self, wb, verbose):
+
         if self.sampling_method == 'dynesty':
-            self.save_dynesty_results(wb, output_foldername, verbose)
+            self.save_dynesty_results(wb, verbose)
         if self.sampling_method == 'emcee':  
-            self.save_emcee_results(wb, output_foldername, verbose)
+            self.save_emcee_results(wb, verbose)
 
         if self.sampling_method == 'LM':
             # Estimate uncertainties from covariance matrix
             try:
-                J = result.jac
+                J = self.sampler_results.jac
                 cov = np.linalg.inv(J.T.dot(J))*self.reducedChisq()
                 uncertainties = np.sqrt(np.diag(cov))
             except:
                 print("Unable to estimate uncertainties from Jacobian")
-                uncertainties = np.zeros_like(result.x)
-            self.save_LM_results(self.lightcurve,self.sampler_results.x,uncertainties,wb,output_foldername,verbose=verbose)
+                uncertainties = np.zeros_like(self.sampler_results.x)
+            self.save_LM_results(self.lightcurve_list,self.sampler_results.x,uncertainties,wb,verbose=verbose)
         return
     
-    def save_emcee_results(self, wavelength_bin, output_foldername, verbose):
+    def save_emcee_results(self, wavelength_bin, verbose):
 
-        med, up, low, mode = self.recover_quartiles_single(samples,bin_number=(wavelength_bin+1),verbose=verbose,save_result=True,burn=False)
-        self.best_fit_values = med
+        output_foldername = self.output_foldername
+        namelist = self.param_list_free
+        ndiscard = self.sampling_arguments['ndiscard']
+        npars    = len(namelist)
+
+        self.arr_low2, self.arr_low1, _, self.arr_high1, self.arr_high2 = self.get_confidence_interval(bin_number=wavelength_bin+1,
+                                                                                                                    equal_prob=True,
+                                                                                                                    verbose=verbose,
+                                                                                                                    save_results=True)
+
+        # save plots of chains
+        pu.plot_chains(self.sampler_mcmc, self.burn,wavelength_bin,
+                       npars, namelist, ndiscard,
+                       save_folder=output_foldername)
 
         # generate and save corner plot
-        samples_corner = self.samples
-        pu.make_corner_plot(samples_corner,bin_number=(wavelength_bin+1),save_fig=True,namelist=self.param_list_free,parameter_modes=mode)
+        pu.make_corner_plot(self.samples,
+                            bin_number=(wavelength_bin+1),
+                            save_fig=True,
+                            namelist=self.param_list_free,
+                            save_folder=output_foldername)
+        #                    parameter_modes=mode)
+        
         return
 
 
-    def save_dynesty_results(self, wb, output_foldername, verbose):
+    def save_dynesty_results(self, wb, verbose):
+
+        output_foldername = self.output_foldername
+
+        # Save results in pickle files
         pickle.dump(self.sampler_results, open(output_foldername + '/pickled_objects/' + 'dynesty_result_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-
-        # from dynesty import utils as dyfunc
-        samples, weights = self.sampler_results.samples, self.sampler_results.importance_weights()
-        # mean, cov = dyfunc.mean_and_cov(samples, weights)
-        equal_weights_samples = self.sampler_results.samples_equal()
-
-        pickle.dump(samples, open(output_foldername + '/pickled_objects/' + 'dynesty_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-        pickle.dump(weights, open(output_foldername + '/pickled_objects/' + 'dynesty_weights_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-        pickle.dump(equal_weights_samples, open(output_foldername + '/pickled_objects/' + 'dynesty_equal_weights_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
-
-        namelist = self.param_list_free
-        medians = []
-        up_err = []
-        low_err = []
-        for i in range(len(namelist)):
-            medians.append(np.percentile(equal_weights_samples.T[i], 50))
-            up_err.append(np.percentile(equal_weights_samples.T[i], 84) - medians[i])
-            low_err.append(medians[i] - np.percentile(equal_weights_samples.T[i], 16))
-        self.best_fit_values = medians
-
-        if wb == 0:
-            new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
-        else:
-            new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
-
-        print('\nSaving best fit parameters to table...\n')
-
-        for i in range(self.nDims):
-            # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
-            new_tab.write("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
-
-            if verbose:
-                print("%s_%d = %f + %f - %f \n"%(namelist[i].replace('$','').replace("\\",''),wb+1,medians[i],up_err[i],low_err[i]))
-
-        new_tab.write('#------------------ \n')
-        new_tab.close()
-
-        ## plotting
-        from dynesty import plotting as dyplot
-        ## maybe move the corner plot somewhere else
+        pickle.dump(self.sampler_results.samples, open(output_foldername + '/pickled_objects/' + 'dynesty_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+        pickle.dump(self.sampler_results.importance_weights(), open(output_foldername + '/pickled_objects/' + 'dynesty_weights_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+        pickle.dump(self.samples, open(output_foldername + '/pickled_objects/' + 'dynesty_equal_weights_samples_wb%s.pickle'%(str(wb+1).zfill(2)),'wb'))
+            
+        # Save results for confidence interval
+        self.arr_low2, self.arr_low1, _, self.arr_high1, self.arr_high2 = self.get_confidence_interval(bin_number=wb+1,
+                                                                                                        best_fit_logl=self.best_fit_values_logl,
+                                                                                                        verbose=verbose,
+                                                                                                        save_results=True)
+        
+        # maybe move the corner plot somewhere else
         fig, ax = dyplot.cornerplot(self.sampler_results, color='dodgerblue',
                                 truth_color='black', show_titles=True,
                                 quantiles=None, max_n_ticks=3)
-        plt.savefig(output_foldername + '/Figures/' + 'dynesty_corner_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
+        fig.savefig(output_foldername + '/plots/' + 'dynesty_corner_plot_wb%s.png'%(str(wb+1).zfill(2)))
 
-        fig, axes = dyplot.traceplot(self.sampler_results,
-                                    truth_color='black', show_titles=True,
-                                    trace_cmap='viridis', connect=True,
-                                    connect_highlight=range(5))
-        plt.savefig(output_foldername + '/Figures/' + 'dynesty_trace_plot_wb%s.pdf'%(str(wb+1).zfill(2)))
+        fig, ax = dyplot.traceplot(self.sampler_results, truths=np.zeros(self.nDims),
+                             truth_color='black', show_titles=True,
+                             trace_cmap='viridis', connect=True,
+                             connect_highlight=range(5))
+        
+        fig.savefig(output_foldername + '/plots/' + 'dynesty_trace_plot_wb%s.png'%(str(wb+1).zfill(2)))
         return
 
 
-    def save_LM_results(self,param_medians,param_uncertainties,bin_number,output_foldername,verbose=True):
+    def save_LM_results(self,param_medians,param_uncertainties,bin_number,verbose=True):
         """Function to save the results from an LM fit to a best_fit_parameters.dat and LM_statistics.dat tables equivalent to emcee results.
 
         Inputs:
@@ -669,6 +669,7 @@ class Sampling(object):
 
         ndim = len(param_medians)
         namelist = self.param_list_free
+        output_foldername = self.output_foldername
 
         if bin_number == 0:
             new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
@@ -689,8 +690,9 @@ class Sampling(object):
 
         return
 
+    def write_fit_diagnostics(self,wavelength_bin,emcee_sampler=None,nsteps=None,burn=False):
 
-    def write_fit_diagnostics(self,wavelength_bin,output_foldername, emcee_fit=False,burn=False,dynesty_fit=False,LM_fit=False,emcee_sampler=None,nsteps=None):
+        output_foldername = self.output_foldername
 
         if wavelength_bin == 0:
             read_mode = 'a'
@@ -700,25 +702,25 @@ class Sampling(object):
         if self.sampling_method == 'emcee':
 
             if burn:
-                diagnostic_tab = open(output_foldername+'burn_statistics.txt',read_mode)
+                diagnostic_tab = open(output_foldername+ '/tables/' + 'burn_statistics.txt',read_mode)
             else:
-                diagnostic_tab = open(output_foldername+'prod_statistics.txt',read_mode)
+                diagnostic_tab = open(output_foldername+ '/tables/' + 'prod_statistics.txt',read_mode)
 
         if self.sampling_method == 'LM':
 
-            diagnostic_tab = open(output_foldername+'LM_statistics.txt',read_mode)
+            diagnostic_tab = open(output_foldername+ '/tables/' + 'LM_statistics.txt',read_mode)
         
         if self.sampling_method == 'dynesty':
-            diagnostic_tab = open(output_foldername+'dynesty_statistics.txt',read_mode)
+            diagnostic_tab = open(output_foldername+ '/tables/' + 'dynesty_statistics.txt',read_mode)
             
         fitted_chi2 = self.chisq()
         fitted_reducedChi2 = self.reducedChisq()
-        fitted_rms = self.rms()*1e6
+        fitted_rms = self.rms()                     # Returns dictionary
         fitted_BIC = self.BIC()
         fitted_AIC = self.AIC()
 
         print('\nCalculating statistics for best fit...')
-        if sampling_model.nlightcurves > 1:
+        if self.nlightcurves > 1:
             print("\n" + "="*40)
             print("Joint fit statistics")
             print("="*40)
@@ -730,25 +732,25 @@ class Sampling(object):
         print('BIC = %f' % fitted_BIC) # global (joint likelihood)
         print('AIC = %f' % fitted_AIC) # global
     
-    print("\nIndividual light curve statistics:")
-    for ilc,lc in enumerate(sampling_model.lightcurve_list):
-        print(f'LC {ilc}')
-        print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
-        print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
-        print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
-        
-    diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
-    if sampling_model.nlightcurves > 1:
-        diagnostic_tab.write("--- Joint fit statistics ---\n")
         print("\nIndividual light curve statistics:")
-        for ilc,lc in enumerate(sampling_model.lightcurve_list):
+        for ilc,lc in enumerate(self.lightcurve_list):
             print(f'LC {ilc}')
             print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
             print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
             print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
-		
-		diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
-        if sampling_model.nlightcurves > 1:
+        
+        diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
+        if self.nlightcurves > 1:
+            diagnostic_tab.write("--- Joint fit statistics ---\n")
+            print("\nIndividual light curve statistics:")
+            for ilc,lc in enumerate(self.lightcurve_list):
+                print(f'LC {ilc}')
+                print('  Chi2 = %.3f' % fitted_chi2[f'lc{ilc}'])
+                print('  Reduced chi2 = %.3f' % fitted_reducedChi2[f'lc{ilc}'])
+                print('  Residual RMS (ppm) = %d' % (fitted_rms[f'lc{ilc}']*1e6))
+                
+        diagnostic_tab.write("\nBin %d \n" % (wavelength_bin))
+        if self.nlightcurves > 1:
             diagnostic_tab.write("--- Joint fit statistics ---\n")
 
             diagnostic_tab.write("Global statistics:")
@@ -758,10 +760,10 @@ class Sampling(object):
         diagnostic_tab.write('BIC = %f \n' % fitted_BIC) # global (joint likelihood)
         diagnostic_tab.write('AIC = %f \n' % fitted_AIC) # global
 
-        if sampling_model.nlightcurves > 1:
+        if self.nlightcurves > 1:
             diagnostic_tab.write("Individual light curve statistics:\n")
 
-        for ilc,lc in enumerate(sampling_model.lightcurve_list):
+        for ilc,lc in enumerate(self.lightcurve_list):
             diagnostic_tab.write('Residual RMS (ppm) = %d \n' % (fitted_rms[f'lc{ilc}']*1e6))
 
         if self.sampling_method == 'dynesty':
@@ -796,6 +798,137 @@ class Sampling(object):
         diagnostic_tab.write('#------------------ \n')
         diagnostic_tab.close()
 
+    def get_confidence_interval(self, bin_number, best_fit_logl=None, equal_prob=False, save_results=False, verbose=False):
+
+        """ Get confidence interval from weighted CDF
+        """
+
+        # Call namelist
+        namelist = self.param_list_free
+        output_foldername = self.output_foldername
+
+        # Defining the confidence intervals for 1, 2, and 3 sigma
+        sig_1 = 0.5 + 0.6826/2.0
+        sig_2 = 0.5 + 0.954/2.0
+
+        if equal_prob:
+            # Equal probability 
+            samples = self.samples
+            prob = np.empty(samples)
+            prob.fill(1/samples)
+        else:
+            results = self.sampler_results
+            samples = results.samples
+            prob = results.importance_weights()
+
+        if best_fit_logl is not None:
+            print_best_fit = True
+        else:
+            print_best_fit = False
+
+        npars = np.shape(samples)[1]
+
+        arr_low2 = np.zeros(shape=(npars))
+        arr_low1 = np.zeros(shape=(npars))
+        arr_median = np.zeros(shape=(npars))
+        arr_high1 = np.zeros(shape=(npars))
+        arr_high2 = np.zeros(shape=(npars))
+
+        if save_results:
+        
+            if bin_number == 1:
+                new_tab = open(output_foldername + '/tables/' + 'best_fit_parameters_median.txt','w')
+                if print_best_fit:
+                    new_tab_bf = open(output_foldername + '/tables/' + 'best_fit_parameters_max_likelihood.txt','w')
+            else:
+                new_tab = open(output_foldername + '/tables/' + 'best_fit_parameters_median.txt','a')
+                if print_best_fit:
+                    new_tab_bf = open(output_foldername + '/tables/' + 'best_fit_parameters_max_likelihood.txt','a')
+
+        # Loop to get confidence intervals for each parameter
+        for i in range(npars):
+
+            # Combine the probability and sample values into a single array for sorting
+            arr_ordered = list(zip(prob[:], samples[:, i]))
+
+            # Sort the array based on the sample values
+            arr_ordered.sort(key=lambda x: x[1])
+            arr_ordered = np.array(arr_ordered)
+
+            # Making the CDF, sum of the prob for each row
+            arr_ordered[:,0] = arr_ordered[:,0].cumsum()
+
+            # Interpolate the CDF to find the sample values corresponding to the desired confidence intervals, x=CDF, y=sample values
+            arr_ordered_interp = lambda x: np.interp(x, arr_ordered[:,0], arr_ordered[:,1],
+                                                        left=arr_ordered[0,1], right=arr_ordered[-1,1])
+
+
+            # And then you get the sample values corresponding to the desired confidence intervals
+            arr_low2[i] = arr_ordered_interp(1-sig_2)
+            arr_low1[i] = arr_ordered_interp(1-sig_1)
+            arr_median[i] = arr_ordered_interp(0.5)
+            arr_high1[i] = arr_ordered_interp(sig_1)
+            arr_high2[i] = arr_ordered_interp(sig_2) 
+
+        # Loop to print best fit parameters with median
+        if save_results:
+
+            print('\nBest fit parameters with median...\n')
+
+            for i in range(npars):
+                key = namelist[i].replace('$','').replace("\\",'')
+                mid_value = arr_median[i]
+
+                write_parameters_med = f'{key}_{bin_number:d} = {mid_value:.6f} + {arr_high1[i] - mid_value:.6f} - {mid_value - arr_low1[i]:.6f}'
+                new_tab.write(write_parameters_med + "\n")
+
+                if verbose:
+                    print(write_parameters_med)
+
+            print('\nSaving to table...\n')
+            new_tab.write('#------------------ \n')
+            new_tab.close()
+
+        # Loop to print best fit parameters with highest log likelihood
+            if print_best_fit:
+
+                print('\nBest fit parameters with highest log likelihood...\n')
+
+                for i in range(npars):
+
+                    key = namelist[i].replace('$','').replace("\\",'')
+                    mid_value = best_fit_logl[i]
+                    write_parameters_bf = f'{key}_{bin_number:d} = {mid_value:.6f} + {arr_high1[i] - mid_value:.6f} - {mid_value - arr_low1[i]:.6f}'
+                    new_tab_bf.write(write_parameters_bf + "\n")
+
+                    if verbose:
+                        print(write_parameters_bf)
+
+                print('\nSaving to table...\n')
+                new_tab_bf.write('#------------------ \n')
+                new_tab_bf.close()
+
+        return arr_low2, arr_low1, arr_median, arr_high1, arr_high2
+
+    def get_arrays_for_sigma_plotting(self):
+
+        low_2 = copy.deepcopy(self.lightcurve_list)
+        low_1 = copy.deepcopy(self.lightcurve_list)
+        high_1 = copy.deepcopy(self.lightcurve_list)
+        high_2 = copy.deepcopy(self.lightcurve_list)
+
+        list_lcs = [low_2, low_1, high_1, high_2]
+        arrs = [self.arr_low2, self.arr_low1, self.arr_high1, self.arr_high2]
+
+        for i, lc_array in enumerate(list_lcs):
+            for ilc, lc in enumerate(lc_array):
+                if len(list_lcs)>1:
+                    lc_theta, _ = self.joint_fitter.map_theta(arrs[i],ilc,self.param_list_free)
+                else:
+                    lc_theta = arrs[i]
+                lc.update_model(lc_theta)
+
+        return [self.lightcurve_list, low_1, high_1, low_2, high_2]
 
     def recover_quartiles_single(self,samples,bin_number,verbose=True,save_result=False,burn=False):
         """
@@ -886,129 +1019,134 @@ class Sampling(object):
         return np.array(median),np.array(upper),np.array(lower),np.array(mode)
 
 
+    def update_prior_file(self, input_prior_file, wb, ilc, best_fit_median=True):
+        """
+        Create a new prior file where values are replaced by best-fit medians and uncertainties.
 
-def update_prior_file(input_prior_file, output_foldername, wb, best_fit_file="best_fit_parameters.txt"):
-    """
-    Create a new prior file where values are replaced by best-fit medians and uncertainties.
+        Rules:
+        - If prior_type == 'N': mean = median, sigma = avg_uncertainty
+        - If prior_type == 'U' AND parameter is fixed: keep old bounds unchanged
+        - If prior_type == 'U' AND parameter is free BUT "preserve U range": keep bounds unchanged
+        - If prior_type == 'U' AND not preserving range:
+                lower = median - err
+                upper = median + err
 
-    Rules:
-    - If prior_type == 'N': mean = median, sigma = avg_uncertainty
-    - If prior_type == 'U' AND parameter is fixed: keep old bounds unchanged
-    - If prior_type == 'U' AND parameter is free BUT "preserve U range": keep bounds unchanged
-    - If prior_type == 'U' AND not preserving range:
-            lower = median - err
-            upper = median + err
+        - Special: t0, a, inc, per are switched to "fixed"
+        """
 
-    - Special: t0, a, inc, per are switched to "fixed"
-    """
+        output_foldername = self.output_foldername
+        if best_fit_median:
+            best_fit_file = "best_fit_parameters_median.txt"
+        else:
+            best_fit_file = "best_fit_parameters_max_likelihood.txt"
 
-    # -------------------------------------------
-    # Load best-fit parameters
-    # -------------------------------------------
-    bestfit = {}
-    with open(output_foldername + best_fit_file, "r") as bf:
-        for line in bf:
-            if "=" not in line:
-                continue
+        # -------------------------------------------
+        # Load best-fit parameters
+        # -------------------------------------------
+        bestfit = {}
+        with open(output_foldername + "/tables/" + best_fit_file, "r") as bf:
+            for line in bf:
+                if "=" not in line:
+                    continue
 
-            parts = line.split()
-            # Format: rp_1 = 0.092987 + 0.000074 - 0.000074
-            name = parts[0].replace("_1", "")
-            median = float(parts[2])
-            plus = float(parts[4])
-            minus = float(parts[6])
-            avg_unc = 0.5*(plus + minus)
+                parts = line.split()
+                # Format: rp_1 = 0.092987 + 0.000074 - 0.000074
+                name = parts[0].replace("_1", "")
+                median = float(parts[2])
+                plus = float(parts[4])
+                minus = float(parts[6])
+                avg_unc = 0.5*(plus + minus)
 
-            bestfit[name] = (median, plus, minus, avg_unc)
+                bestfit[name] = (median, plus, minus, avg_unc)
 
-    # -------------------------------------------
-    # Output file
-    # -------------------------------------------
-    new_prior_file = input_prior_file.replace(".txt", "_fitted_wb%s.txt"%(str(wb+1).zfill(4)))
+        # -------------------------------------------
+        # Output file
+        # -------------------------------------------
+        new_prior_file = input_prior_file.replace(".txt", "_fitted_lc%s_wb%s.txt"%(str(ilc), str(wb+1).zfill(4)))
 
-    # Parameters that must be fixed
-    force_fix = {"t0", "a", "inc", "per"}
+        # Parameters that must be fixed
+        force_fix = {"t0", "a", "inc", "per"}
 
-    with open(input_prior_file, "r") as infile, open(new_prior_file, "w") as outfile:
+        with open(input_prior_file, "r") as infile, open(new_prior_file, "w") as outfile:
 
-        for line in infile:
-            stripped = line.strip()
+            for line in infile:
+                stripped = line.strip()
 
-            # Keep blank lines or comments
-            if stripped == "" or stripped.startswith("#"):
-                outfile.write(line)
-                continue
+                # Keep blank lines or comments
+                if stripped == "" or stripped.startswith("#"):
+                    outfile.write(line)
+                    continue
 
-            parts = line.split()
-            if len(parts) < 6:
-                outfile.write(line)
-                continue
+                parts = line.split()
+                if len(parts) < 6:
+                    outfile.write(line)
+                    continue
 
-            pname, fitflag, value, p1, p2, ptype = parts[:6]
-            remainder = parts[6:]  # preserve trailing comments or columns
+                pname, fitflag, value, p1, p2, ptype = parts[:6]
+                remainder = parts[6:]  # preserve trailing comments or columns
 
-            # Not a parameter present in best-fit file
-            if pname not in bestfit:
-                outfile.write(line)
-                continue
+                # Not a parameter present in best-fit file
+                if pname not in bestfit:
+                    outfile.write(line)
+                    continue
 
-            median, plus, minus, avg_unc = bestfit[pname]
+                median, plus, minus, avg_unc = bestfit[pname]
 
-            # Determine if this param should become fixed
-            is_forced_fixed = pname in force_fix
+                # Determine if this param should become fixed
+                is_forced_fixed = pname in force_fix
 
-            # -------------------------------------------
-            # If forced fixed
-            # -------------------------------------------
-            if is_forced_fixed:
-                new_fitflag = "fixed"
-                new_value = f"{median:.8f}"
-
-                # Preserve original priors because they are irrelevant once fixed
-                new_p1 = p1
-                new_p2 = p2
-
-            # -------------------------------------------
-            # If not forced fixed
-            # -------------------------------------------
-            else:
-
-                new_fitflag = fitflag  # usually "free"
-
-                if ptype == "N":
-                    # Gaussian prior: mean = median ; sigma = avg unc
+                # -------------------------------------------
+                # If forced fixed
+                # -------------------------------------------
+                if is_forced_fixed:
+                    new_fitflag = "fixed"
                     new_value = f"{median:.8f}"
-                    new_p1 = f"{median:.8f}"
-                    new_p2 = f"{avg_unc:.8f}"
 
-                elif ptype == "U":
-
-                    # Preserve range for all uniform priors UNLESS you explicitly tighten
-                    preserve_range = True
-
-                    if preserve_range:
-                        new_value = f"{median:.8f}"
-                        new_p1 = p1
-                        new_p2 = p2
-                    else:
-                        # Tighten the bounds to median ± error
-                        new_value = f"{median:.8f}"
-                        new_p1 = f"{(median - minus):.8f}"
-                        new_p2 = f"{(median + plus):.8f}"
-
-                else:
-                    # Unknown prior → keep original
-                    new_value = f"{median:.8f}"
+                    # Preserve original priors because they are irrelevant once fixed
                     new_p1 = p1
                     new_p2 = p2
 
-            # -------------------------------------------
-            # Construct output line
-            # -------------------------------------------
-            newcols = [pname, new_fitflag, new_value, new_p1, new_p2, ptype]
-            if remainder:
-                newcols += remainder
+                # -------------------------------------------
+                # If not forced fixed
+                # -------------------------------------------
+                else:
 
-            outfile.write("    ".join(newcols) + "\n")
+                    new_fitflag = fitflag  # usually "free"
 
-    return new_prior_file
+                    if ptype == "N":
+                        # Gaussian prior: mean = median ; sigma = avg unc
+                        new_value = f"{median:.8f}"
+                        new_p1 = f"{median:.8f}"
+                        new_p2 = f"{avg_unc:.8f}"
+
+                    elif ptype == "U":
+
+                        # Preserve range for all uniform priors UNLESS you explicitly tighten
+                        preserve_range = True
+
+                        if preserve_range:
+                            new_value = f"{median:.8f}"
+                            new_p1 = p1
+                            new_p2 = p2
+                        else:
+                            # Tighten the bounds to median ± error
+                            new_value = f"{median:.8f}"
+                            new_p1 = f"{(median - minus):.8f}"
+                            new_p2 = f"{(median + plus):.8f}"
+
+                    else:
+                        # Unknown prior → keep original
+                        new_value = f"{median:.8f}"
+                        new_p1 = p1
+                        new_p2 = p2
+
+                # -------------------------------------------
+                # Construct output line
+                # -------------------------------------------
+                newcols = [pname, new_fitflag, new_value, new_p1, new_p2, ptype]
+                if remainder:
+                    newcols += remainder
+
+                outfile.write("    ".join(newcols) + "\n")
+
+        return new_prior_file

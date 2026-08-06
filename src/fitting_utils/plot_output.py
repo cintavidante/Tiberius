@@ -36,26 +36,40 @@ wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 
+contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
+contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
+
+cwd = os.getcwd()
+output_foldername = os.path.join(cwd, str(input_dict['output_foldername']))
+
 for ilc in range(nlc):
     # TODO - hack loop for now, but we need to think about how to better handle multiple light curves in the plotting code
 
-    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = pu.load_completed_bins(directory=input_dict['output_foldername'],start_bin=args.start_bin,end_bin=args.end_bin,mask=args.mask_bins,lc_idx=ilc)
+    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = pu.load_completed_bins(directory=output_foldername,
+                                                                        start_bin=args.start_bin,
+                                                                        end_bin=args.end_bin,
+                                                                        mask=args.mask_bins,
+                                                                        lc_idx=ilc)
+
     if not args.photon_noise: # if we're not using photon noise uncertainties, then we are using the rescaled error bars as our photometric uncertainties
-        e = e_r
+        if e_r is not None:
+            e = e_r
+        else:
+            print("No rescaled uncertainties found, using original uncertainties instead.")
 
     # raise SystemExit
 
     ### Print median RMS of all bins from LM_statistics.dat/prod_statistics.dat
     try:
         rms_tab = "LM_statistics.txt"
-        r = open(rms_tab,"r")
+        r = open(output_foldername + "/tables/" + rms_tab,"r")
     except:
         try:
             rms_tab = "prod_statistics.txt"
-            r = open(rms_tab,"r")
+            r = open(output_foldername + "/tables/" + rms_tab,"r")
         except:
             rms_tab = 'dynesty_statistics.txt'
-            r = open(rms_tab,"r")
+            r = open(output_foldername + "/tables/" + rms_tab,"r")
 
     all_RMS = []
     for line in r:
@@ -67,7 +81,7 @@ for ilc in range(nlc):
     print("\n******Median RMS all bins = %d ppm*****\n"%np.median(all_RMS))
     r.close()
     if args.save_table:
-        rn = open(rms_tab,"a")
+        rn = open(output_foldername + "/tables/" + rms_tab,"a")
         rn.write("\n******Median RMS all bins = %d ppm*****\n"%np.median(all_RMS)) # TODO - need to alter for multi-light curve fitting
         rn.close()
 
@@ -75,14 +89,41 @@ for ilc in range(nlc):
 
     if not args.white_light_curve and not args.photon_noise and args.start_bin is None and args.end_bin is None:
         ### Plot the transmission spectrum & the Rp/Rs error divided by photon noise
-        trans_fig = pu.recover_transmission_spectrum(directory=input_dict['output_foldername'],save_fig=args.save_fig,plot_fig=True,bin_mask=args.mask_bins,save_to_tab=args.save_table,iib=args.iib)
+
+        trans_fig_med = pu.recover_transmission_spectrum(directory=output_foldername,
+                                                    save_fig=args.save_fig,plot_fig=True,
+                                                    bin_mask=args.mask_bins,
+                                                    save_to_tab=args.save_table,
+                                                    iib=args.iib,
+                                                    fit_input=input_dict,
+                                                    best_fit_mode='median')
+
         if args.close_plots:
-            plt.close()
+                        plt.close()
         else:
-            trans_fig.show()
+            trans_fig_med.show()
+
+        try:
+            trans_fig_ml = pu.recover_transmission_spectrum(directory=output_foldername,
+                                                        save_fig=args.save_fig,plot_fig=True,
+                                                        bin_mask=args.mask_bins,
+                                                        save_to_tab=args.save_table,
+                                                        iib=args.iib,
+                                                        fit_input=input_dict,
+                                                        best_fit_mode='likelihood')
+            if args.close_plots:
+                plt.close()
+            else:
+                trans_fig_ml.show()
+
+        except:
+            pass
 
         ### Plot the expected vs calculated limb darkening coefficients
-        pu.expected_vs_calculated_ldcs(input_dict['output_foldername'],lc_idx=ilc,save_fig=args.save_fig,bin_mask=args.mask_bins)
+        pu.expected_vs_calculated_ldcs(directory=output_foldername,
+                                       lc_idx=ilc,
+                                       save_fig=args.save_fig,
+                                       bin_mask=args.mask_bins)
         if args.close_plots:
             plt.close()
 
@@ -124,204 +165,210 @@ for ilc in range(nlc):
     if args.rebin_data is not None:
         raise SystemExit
 
-    # ### RMS vs bins (for comparison with photon noise)
-    # print("Plotting RMS vs bins...")
-    # residuals = []
+    ### RMS vs bins (for comparison with photon noise)
+    print("Plotting RMS vs bins...")
+    residuals = []
 
-    # for i,model in enumerate(m):
-    #     # calculate transit model
-    #     model_y = model.calc(x[i])
-    #     if model.GP_used:
-    #         mu = model.GP_model.calc(x[i],y[i],e[i])
-    #         residuals.append(y[i] - model_y - mu)
-    #     else:
-    #         residuals.append(y[i]-model_y)
+    for i,model in enumerate(m):
+        # calculate transit model
+        model_y = model.calc(x[i])
+        if model.GP_used:
+            mu = model.GP_model.calc(x[i],y[i],e[i])
+            residuals.append(y[i] - model_y - mu)
+        else:
+            residuals.append(y[i]-model_y)
 
-    #     # calculate ingress duration which sets the upper limit on the number of bins
-    #     if i == 0:
+        # calculate ingress duration which sets the upper limit on the number of bins
 
-    #         # first turn off limb-darkening
-    #         if "u1" in model.param_dict:
-    #             if "u1" in model.param_list_free:
-    #                 model.param_dict["u1"].currVal = 0
-    #             else:
-    #                 model.param_dict["u1"] = 0
+        if i == 0:
 
-    #         if "u2" in model.param_dict:
-    #             if "u2" in model.param_list_free:
-    #                 model.param_dict["u2"].currVal = 0
-    #             else:
-    #                 model.param_dict["u2"] = 0
+            # first turn off limb-darkening
+            if "u1" in model.param_dict:
+                if "u1" in model.param_list_free:
+                    model.param_dict["u1"].currVal = 0
+                else:
+                    model.param_dict["u1"] = 0
 
-    #         if "u3" in model.param_dict:
-    #             if "u3" in model.param_list_free:
-    #                 model.param_dict["u3"].currVal = 0
-    #             else:
-    #                 model.param_dict["u3"] = 0
+            if "u2" in model.param_dict:
+                if "u2" in model.param_list_free:
+                    model.param_dict["u2"].currVal = 0
+                else:
+                    model.param_dict["u2"] = 0
 
-    #         if "u4" in model.param_dict:
-    #             if "u4" in model.param_list_free:
-    #                 model.param_dict["u4"].currVal = 0
-    #             else:
-    #                 model.param_dict["u4"] = 0
+            if "u3" in model.param_dict:
+                if "u3" in model.param_list_free:
+                    model.param_dict["u3"].currVal = 0
+                else:
+                    model.param_dict["u3"] = 0
 
-    #         # now get transit only model
-    #         red_noise_model = 1
-    #         if model.systematic_model.poly_used:
-    #             red_noise_model *= model.systematic_model.red_noise_poly(x[i])
-    #         if model.systematic_model.exp_ramp_used:
-    #              red_noise_model *= model.systematic_model.exponential_ramp(x[i])
-    #         if model.systematic_model.step_func_used:
-    #              red_noise_model *= model.systematic_model.step_function(x[i])
-    #         # now determine where the transit depth first and last reaches maximum - these are contact points 2 and 3
-    #         # calculate the depth
-    #         depth = model.param_dict["rp"].currVal**2
-    #         tm = model.calc(x[i])/red_noise_model
+            if "u4" in model.param_dict:
+                if "u4" in model.param_list_free:
+                    model.param_dict["u4"].currVal = 0
+                else:
+                    model.param_dict["u4"] = 0
 
-    #         # ~ full_transit = np.where(tm==tm.min())[0]# assumes flat bottom?
-    #         full_transit = np.where(tm <= (1 - depth))[0]
-    #         contact2 = full_transit[0]
-    #         contact3 = full_transit[-1]
+            # now get transit only model
+            red_noise_model = 1
+            if model.systematic_model.poly_used:
+                red_noise_model *= model.systematic_model.red_noise_poly(x[i])
+            if model.systematic_model.exp_ramp_used:
+                 red_noise_model *= model.systematic_model.exponential_ramp(x[i])
+            if model.systematic_model.step_func_used:
+                 red_noise_model *= model.systematic_model.step_function(x[i])
+            # now determine where the transit depth first and last reaches maximum - these are contact points 2 and 3
+            # calculate the depth
+            depth = model.param_dict["rp"].currVal**2
+            tm = model.calc(x[i])/red_noise_model
 
-    #         # use these to refine contact1 and contact4
-    #         contact1 = np.where(tm[:contact2]==tm.max())[0].max()
-    #         contact4 = np.where(tm[contact3:]==tm.max())[0].min()+contact3
+            # ~ full_transit = np.where(tm==tm.min())[0]# assumes flat bottom?
+            full_transit = np.where(tm <= (1 - depth))[0]
+            contact2 = full_transit[0]
+            contact3 = full_transit[-1]
 
-    #         ingress_duration = 24*60*(x[i][contact2]-x[i][contact1])
-    #         print("Ingress duration = %d mins = %d frames"%(ingress_duration,contact2-contact1))
+            # use these to refine contact1 and contact4
+            try:
+                contact1 = np.where(tm[:contact2]==tm.max())[0].max()
+            except:
+                contact1 = 0 # transit started after the start of ingress
 
-    #         transit_duration = 24*60*(x[i][contact4]-x[i][contact1])
-    #         print("Transit duration = %d mins = %d frames"%(transit_duration,contact4-contact1))
+            contact4 = np.where(tm[contact3:]==tm.max())[0].min()+contact3
 
-    #         print("Contact 1 = %d; Contact 2 = %d; Contact 3 = %d; Contact 4 = %d"%(contact1,contact2,contact3,contact4))
+            ingress_duration = 24*60*(x[i][contact2]-x[i][contact1])
+            print("Ingress duration = %d mins = %d frames"%(ingress_duration,contact2-contact1))
 
-    #residuals = np.atleast_1d(np.array(residuals)) - residuals can be different lengths due to outlier clipping
+            transit_duration = 24*60*(x[i][contact4]-x[i][contact1])
+            print("Transit duration = %d mins = %d frames"%(transit_duration,contact4-contact1))
 
-    # if nbins == 1:
-    #     ncols = 1
-    #     nrows = 1
-    #     nplots = 1
-    # if nbins == 2:
-    #     ncols = 2
-    #     nrows = 1
-    #     nplots = 1
-    # if nbins > 2:
-    #     ncols = 3
-    #     nrows = int(np.ceil(float(nbins)/ncols))
-    #     if nrows > 10:
-    #         nrows = 10
-    #         nplots = int(np.ceil(nbins/(nrows*ncols)))
-    #     else:
-    #         nplots = 1
+            print("Contact 1 = %d; Contact 2 = %d; Contact 3 = %d; Contact 4 = %d"%(contact1,contact2,contact3,contact4))
 
-    # if args.save_table:
-    #     beta_factor_tab = open("red_noise_beta_factors.txt","w")
-    #     beta_factor_tab.write("# Wavelength bin, Beta factor \n")
+    # why is this here? it's making the residuals 0!
+    residuals = np.atleast_1d(np.array(residuals)) # can be different lengths due to outlier clipping
 
-    # beta_factors = []
-    # bin_counter = 0
+    if nbins == 1:
+        ncols = 1
+        nrows = 1
+        nplots = 1
+    if nbins == 2:
+        ncols = 2
+        nrows = 1
+        nplots = 1
+    if nbins > 2:
+        ncols = 3
+        nrows = int(np.ceil(float(nbins)/ncols))
+        if nrows > 10:
+            nrows = 10
+            nplots = int(np.ceil(nbins/(nrows*ncols)))
+        else:
+            nplots = 1
 
-    # for plot_no in range(nplots):
-    #     fig = plt.figure(figsize=(ncols*5,nrows*2.5))
-    #     subplot_counter = 1
-    #     for i in range(bin_counter,nbins):
-    #         if subplot_counter > nrows*ncols:
-    #             continue
+    if args.save_table:
+        beta_factor_tab = open(output_foldername + "/tables/" + "red_noise_beta_factors.txt","w")
+        beta_factor_tab.write("# Wavelength bin, Beta factor \n")
 
-    #         ax = fig.add_subplot(nrows,ncols,subplot_counter)
-    #         rms = []
-    #         bin_size = []
-    #         time_steps = []
-    #         time_diff = np.diff(x[i]).min()*24*60 # in mins
-    #         max_points = int(np.round(60/time_diff)) # go up to maximum of 30 minute bins
-    #         # max_points = contact2 - contact1 # go up to ingress duration as max points per bin
-    #         # max_points = 200
+    beta_factors = []
+    bin_counter = 0
 
-    #         npoints_per_bin = np.hstack((np.linspace(1,max_points,1000),max_points))
+    for plot_no in range(nplots):
+        fig = plt.figure(figsize=(ncols*5,nrows*2.5))
+        subplot_counter = 1
+        for i in range(bin_counter,nbins):
+            if subplot_counter > nrows*ncols:
+                continue
 
-    #         for j in npoints_per_bin:
-    #             if j == 1:
-    #                 rms.append(np.sqrt(np.nanmean(np.square(residuals[i]))))
-    #                 time_steps.append(np.diff(x[i]).mean()*24*60)
-    #                 bin_size.append(1)
-    #             else:
-    #                 bins = np.linspace(x[i][0],x[i][-1],int(len(x[i])/j))
-    #                 time_steps.append(np.diff(bins).mean()*24*60)
-    #                 binned_x,binned_y,binned_e = pu.rebin(bins,x[i],residuals[i],e[i],weighted=False)
-    #                 rms.append(np.sqrt(np.nanmean(np.square(binned_y))))
-    #                 N = float(len(residuals[i]))/float((len(bins)))
-    #                 bin_size.append(N)
+            ax = fig.add_subplot(nrows,ncols,subplot_counter)
+            rms = []
+            bin_size = []
+            time_steps = []
+            time_diff = np.diff(x[i]).min()*24*60 # in mins
+            max_points = int(np.round(60/time_diff)) # go up to maximum of 30 minute bins
+            # max_points = contact2 - contact1 # go up to ingress duration as max points per bin
+            # max_points = 200
 
-    #         gaussian_white_noise = np.array([1/np.sqrt(n) for n in npoints_per_bin])
-    #         offset = max(gaussian_white_noise)/rms[0]
-    #         gaussian_white_noise = gaussian_white_noise/offset
-    #         # beta_factor = np.max(rms/gaussian_white_noise) # average ratio of measured dispersion to theortical value, https://iopscience.iop.org/article/10.1086/589737/pdf
-    #         #
-    #         # beta_factors.append(beta_factor)
-    #         beta_factor = (rms[-1]/rms[0])/(gaussian_white_noise[-1]/gaussian_white_noise[0])
-    #         beta_factors.append(beta_factor)
+            npoints_per_bin = np.hstack((np.linspace(1,max_points,1000),max_points))
 
-    #         if args.save_table:
-    #             beta_factor_tab.write('%f %f \n'%(w[i],beta_factor))
+            for j in npoints_per_bin:
+                if j == 1:
+                    rms.append(np.sqrt(np.nanmean(np.square(residuals[i]))))
+                    time_steps.append(np.diff(x[i]).mean()*24*60)
+                    bin_size.append(1)
+                else:
+                    bins = np.linspace(x[i][0],x[i][-1],int(len(x[i])/j))
+                    time_steps.append(np.diff(bins).mean()*24*60)
+                    binned_x,binned_y,binned_e = pu.rebin(bins,x[i],residuals[i],e[i],weighted=False)
+                    rms.append(np.sqrt(np.nanmean(np.square(binned_y))))
+                    N = float(len(residuals[i]))/float((len(bins)))
+                    bin_size.append(N)
 
-    #         if i == 0:
-    #             # ax.plot(npoints_per_bin,rms/rms[0],'r',lw=2,label='measured noise',zorder=1)
-    #             # ax.plot(npoints_per_bin,gaussian_white_noise/gaussian_white_noise[0],color='k',lw=2,label='white noise',zorder=0)
-    #             ax.plot(npoints_per_bin,1e6*np.array(rms),'r',lw=2,label='measured noise',zorder=1)
-    #             ax.plot(npoints_per_bin,(gaussian_white_noise/gaussian_white_noise[0])*(1e6*rms[0]),color='k',lw=2,label='white noise',zorder=0)
-    #             ax.legend()
-    #         else:
-    #             # ax.plot(npoints_per_bin,rms/rms[0],'r',lw=2,zorder=1)
-    #             # ax.plot(npoints_per_bin,gaussian_white_noise/gaussian_white_noise[0],color='k',lw=2,zorder=0)
-    #             ax.plot(npoints_per_bin,1e6*np.array(rms),'r',lw=2,zorder=1)
-    #             ax.plot(npoints_per_bin,(gaussian_white_noise/gaussian_white_noise[0])*(1e6*rms[0]),color='k',lw=2,zorder=0)
+            gaussian_white_noise = np.array([1/np.sqrt(n) for n in npoints_per_bin])
+            offset = max(gaussian_white_noise)/rms[0]
+            gaussian_white_noise = gaussian_white_noise/offset
+            # beta_factor = np.max(rms/gaussian_white_noise) # average ratio of measured dispersion to theortical value, https://iopscience.iop.org/article/10.1086/589737/pdf
+            #
+            # beta_factors.append(beta_factor)
+            beta_factor = (rms[-1]/rms[0])/(gaussian_white_noise[-1]/gaussian_white_noise[0])
+            beta_factors.append(beta_factor)
 
-    #         ax.set_yscale('log')
-    #         ax.set_xscale('log')
-    #         ax.set_title(r'%.3f%s'%(w[i],pu.determine_wvl_units(w)),fontsize=12)
+            if args.save_table:
+                beta_factor_tab.write('%f %f \n'%(w[i],beta_factor))
 
-    #         if nrows == 1 and i == 0:
-    #             ax.set_xlabel("Points per bin",fontsize=14)
-    #             ax.set_ylabel("RMS (ppm)",fontsize=14)
-    #         if i < nrows*ncols-ncols:
-    #             ax.set_xticklabels([])
-    #         if i%3 != 0:
-    #             ax.set_yticklabels([])
+            if i == 0:
+                # ax.plot(npoints_per_bin,rms/rms[0],'r',lw=2,label='measured noise',zorder=1)
+                # ax.plot(npoints_per_bin,gaussian_white_noise/gaussian_white_noise[0],color='k',lw=2,label='white noise',zorder=0)
+                ax.plot(npoints_per_bin,1e6*np.array(rms),'r',lw=2,label='measured noise',zorder=1)
+                ax.plot(npoints_per_bin,(gaussian_white_noise/gaussian_white_noise[0])*(1e6*rms[0]),color='k',lw=2,label='white noise',zorder=0)
+                ax.legend()
+            else:
+                # ax.plot(npoints_per_bin,rms/rms[0],'r',lw=2,zorder=1)
+                # ax.plot(npoints_per_bin,gaussian_white_noise/gaussian_white_noise[0],color='k',lw=2,zorder=0)
+                ax.plot(npoints_per_bin,1e6*np.array(rms),'r',lw=2,zorder=1)
+                ax.plot(npoints_per_bin,(gaussian_white_noise/gaussian_white_noise[0])*(1e6*rms[0]),color='k',lw=2,zorder=0)
 
-    #         ax.tick_params(bottom=True,top=True,left=True,right=True,direction="inout",labelsize=12,length=8,width=1.,pad=1)
-    #         ax.tick_params(which='minor',bottom=True,top=True,left=True,right=True,direction="inout",labelsize=12,length=4,width=1.)
+            ax.set_yscale('log')
+            ax.set_xscale('log')
+            ax.set_title(r'%.3f%s'%(w[i],pu.determine_wvl_units(w)),fontsize=12)
 
-    #         ax.xaxis.set_major_formatter(ScalarFormatter())
-    #         ax.xaxis.get_major_formatter().set_scientific(False)
-    #         ax.xaxis.get_major_formatter().set_useOffset(False)
+            if nrows == 1 and i == 0:
+                ax.set_xlabel("Points per bin",fontsize=14)
+                ax.set_ylabel("RMS (ppm)",fontsize=14)
+            if i < nrows*ncols-ncols:
+                ax.set_xticklabels([])
+            if i%3 != 0:
+                ax.set_yticklabels([])
 
-    #         ax.yaxis.set_major_formatter(ScalarFormatter())
-    #         ax.yaxis.get_major_formatter().set_scientific(False)
-    #         ax.yaxis.get_major_formatter().set_useOffset(False)
+            ax.tick_params(bottom=True,top=True,left=True,right=True,direction="inout",labelsize=12,length=8,width=1.,pad=1)
+            ax.tick_params(which='minor',bottom=True,top=True,left=True,right=True,direction="inout",labelsize=12,length=4,width=1.)
 
-    #         if nrows > 1:
-    #             fig.text(0.5,0.08,'Points per bin',fontsize=14,ha='center',va='center')
-    #             # fig.text(0.08,0.5,'Normalized RMS',fontsize=14,ha='center',va='center',rotation=90)
-    #             fig.text(0.08,0.5,'RMS (ppm)',fontsize=14,ha='center',va='center',rotation=90)
+            ax.xaxis.set_major_formatter(ScalarFormatter())
+            ax.xaxis.get_major_formatter().set_scientific(False)
+            ax.xaxis.get_major_formatter().set_useOffset(False)
 
-    #         subplot_counter += 1
-    #         bin_counter += 1
+            ax.yaxis.set_major_formatter(ScalarFormatter())
+            ax.yaxis.get_major_formatter().set_scientific(False)
+            ax.yaxis.get_major_formatter().set_useOffset(False)
 
-    #     if args.save_fig:
-    #         if nbins > 10:
-    #             plt.savefig('rms_vs_bins_%s.png'%(str(plot_no+1).zfill(4)),bbox_inches='tight',dpi=200)
-    #         else:
-    #             plt.savefig('rms_vs_bins_%s.pdf'%(str(plot_no+1).zfill(4)),bbox_inches='tight')
-    #     if not args.close_plots:
-    #         plt.show()
-    #     plt.close()
+            if nrows > 1:
+                fig.text(0.5,0.08,'Points per bin',fontsize=14,ha='center',va='center')
+                # fig.text(0.08,0.5,'Normalized RMS',fontsize=14,ha='center',va='center',rotation=90)
+                fig.text(0.08,0.5,'RMS (ppm)',fontsize=14,ha='center',va='center',rotation=90)
 
-    # print("\n******Median red noise beta factor = %.3f*****\n"%np.median(beta_factors))
+            subplot_counter += 1
+            bin_counter += 1
+
+        if args.save_fig:
+            if nbins > 10:
+                plt.savefig(output_foldername + '/plots/rms_vs_bins_%s.png'%(str(plot_no+1).zfill(4)),bbox_inches='tight',dpi=200)
+            else:
+                plt.savefig(output_foldername + '/plots/rms_vs_bins_%s.pdf'%(str(plot_no+1).zfill(4)),bbox_inches='tight')
+        if not args.close_plots:
+            plt.show()
+        plt.close()
+
+    print("\n******Median red noise beta factor = %.3f*****\n"%np.median(beta_factors))
 
     # if args.save_table:
     #     beta_factor_tab.write("\n******Median red noise beta factor = %.3f*****\n"%np.median(beta_factors))
     #     beta_factor_tab.close()
-#        if args.white_light_curve: TODO - not working
-#            mc.beta_rescale_uncertainties(np.array(beta_factors),"best_fit_parameters.txt",trans_spec_tab=None)
-#        else:
-#            mc.beta_rescale_uncertainties(np.array(beta_factors),"best_fit_parameters.txt","transmission_spectrum.txt")
+    #    if args.white_light_curve: TODO - not working
+    #        mc.beta_rescale_uncertainties(np.array(beta_factors),"best_fit_parameters.txt",trans_spec_tab=None)
+    #    else:
+    #        mc.beta_rescale_uncertainties(np.array(beta_factors),"best_fit_parameters.txt","transmission_spectrum.txt")

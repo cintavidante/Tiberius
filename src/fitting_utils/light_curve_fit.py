@@ -30,6 +30,9 @@ wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 
+cwd = os.getcwd()
+output_foldername = os.path.join(cwd, str(input_dict['output_foldername']))
+
 # check all files provided 
 time_list   = np.array([str(i) for i in input_dict['time_file'].split(',')])
 flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
@@ -66,16 +69,15 @@ if rebin_data is not None:
 show_plots = bool(int(input_dict['show_plots']))
 save_plots = bool(int(input_dict['save_plots']))
 
-cwd = os.getcwd()
-output_foldername = cwd + '/' + str(input_dict['output_foldername']) + '/'
+# os.makedirs(output_foldername, exist_ok=True)
+# if save_plots:
+#     os.makedirs(output_foldername + '/plots', exist_ok=True)
+# os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)        
 
-os.makedirs(output_foldername, exist_ok=True)
-if save_plots:
-    os.makedirs(output_foldername + '/Figures', exist_ok=True)
-os.makedirs(output_foldername + '/pickled_objects', exist_ok=True)
-                                            
+def construct_lightcurves(ilightcurve, wb):
 
-def construct_lightcurves(ilightcurve,wb):
+    global white_light_fit
+
     print(f"Construct light curve {ilightcurve+1}..")
 
     try:
@@ -151,7 +153,7 @@ def construct_lightcurves(ilightcurve,wb):
             plt.ylabel('Normalised flux')
             plt.title('Common mode correction')
             plt.legend(loc='upper left')
-            plt.savefig(output_foldername +'/Figures/Common_mode_correction.png', bbox_inches=True)
+            plt.savefig(output_foldername +'/plots/Common_mode_correction.png', bbox_inches=True)
             plt.close()
 
             y = flux
@@ -232,7 +234,7 @@ def construct_lightcurves(ilightcurve,wb):
     
     if model_inputs['transit_model']['use_generated_ld_as_prior'] or model_inputs['transit_model']['use_generated_ld']:
         try:
-            model_inputs['transit_model']['LDCs_generated'] = np.loadtxt(f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
+            model_inputs['transit_model']['LDCs_generated'] = np.loadtxt(output_foldername + '/' + f'LD_coefficients_lc{ilightcurve}.txt',unpack=True)
         except:
             raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
             
@@ -357,7 +359,7 @@ elif sampling_method == 'dynesty':
 # else:
 #     raise SystemExit
 
-sampling = s.Sampling(lightcurve_objects, sampling_arguments, sampling_method)
+sampling = s.Sampling(lightcurve_objects, sampling_arguments, sampling_method, output_foldername)
 
 if sampling_method == 'emcee':
 
@@ -381,24 +383,30 @@ elif sampling_method == 'LM':
             lightcurve_objects[ilc].flux_err *= rescaling_factor
             pickle.dump(lightcurve_objects[ilc].flux_err,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_lc{}_wb{}.pickle'.format(str(ilc),str(wb+1).zfill(4)),'wb'))
 
-
         sampling_run2 = s.Sampling(lightcurve_objects,sampling_arguments,sampling_method)
         fitted_lightcurve_list = sampling_run2.run_LM(wavelength_bin=wb)
 
         rchi2_rescaled = sampling_run2.reducedChisq()
         print("reduced Chi2 following error rescaling = %.2f"%(rchi2_rescaled['total']))
-        pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
+        # pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
-sampling.save_results(wb, output_foldername, True)
-sampling.write_fit_diagnostics(wb, output_foldername, True)
+sampling.save_results(wb, verbose=True)
+sampling.write_fit_diagnostics(wb)
+
+for ilc,lc in enumerate(fitted_lightcurve_list):
+    pickle.dump(lc,open(output_foldername + '/pickled_objects/' + f'fitted_lightcurve_model_lc{ilc}_wb{str(wb+1).zfill(4)}.pickle','wb'))
+
+pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
+                            save_folder=output_foldername)
 
 for i in range(nlc):
     _time = lightcurve_objects[i].time_array
     _flux = lightcurve_objects[i].flux_array
     _flux_error = lightcurve_objects[i].flux_err
-    fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True)
+    fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True,
+                               save_folder=output_foldername)
     print(fitted_lightcurve_list[i].transit_model.batman_params.u)
-#pickle.dump(fitted_lightcurve,open(output_foldername + '/pickled_objects/' + 'fitted_lightcurve_model_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
 if white_light_fit:
-    s.update_prior_file(prior_file, output_foldername, wb)
+    for ilc in range(nlc):
+        _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc)

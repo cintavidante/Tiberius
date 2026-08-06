@@ -369,7 +369,8 @@ def plot_models(model_list,time,flux_array,error_array,wvl_centre,rebin_data=Non
     return fig
 
 
-def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,systematics_model_inputs=None):
+def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,
+                      systematics_model_inputs=None, save_folder=None):
     """
     Plot a single light curve with model.
 
@@ -394,14 +395,19 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
         tc = model.param_dict['t_secondary'].currVal
         model_name = 'eclipse'
     except:
-        tc = model.param_dict['t_secondary']
-        model_name = 'eclipse'
         try:
-            tc = model.param_dict['t0'].currVal
-            model_name = 'transit'
+            tc = model.param_dict['t_secondary']
+            model_name = 'eclipse'
         except:
-            tc = model.param_dict['t0']
-            model_name = False
+            try:
+                tc = model.param_dict['t0'].currVal
+                model_name = 'transit'
+            except:
+                try:
+                    tc = model.param_dict['t0']
+                    model_name = False
+                except:
+                    pass
 
     fig = plt.figure()
 
@@ -559,9 +565,9 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
         if rebin_data is None:
             # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
-            plt.savefig(f'fitted_model_lc{lc_idx}{wb}.png',bbox_inches='tight',dpi=200)
+            plt.savefig(save_folder + '/plots/' + f'fitted_model_lc{lc_idx}{wb}.png',bbox_inches='tight',dpi=200)
         else:
-            plt.savefig('fitted_model_lc%s_%s_rebin_%d.png'%(lc_idx,wb,rebin_data),bbox_inches='tight',dpi=200)
+            plt.savefig(save_folder + '/plots/' + f'fitted_model_lc%s_%s_rebin_%d.png'%(lc_idx,wb,rebin_data),bbox_inches='tight',dpi=200)
 
         plt.close()
 
@@ -573,9 +579,10 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
     return fig
 
-def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, upper_lightcurve_list, lower_lightcurve_list,
-                              rebin_data=None, systematics_model_inputs=None, deconstruct=True, plot_residual_std=0,
-                              save_fig=False, wavelength_bin=None):
+def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2, 
+                             rebin_data=None, systematics_model_inputs=None, deconstruct=True, 
+                             plot_residual_std=0, save_fig=False, wavelength_bin=None,
+                             save_folder=None):
     
     """
     Plot joint fit in one image.
@@ -596,12 +603,18 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
         flux = lightcurve_objects[i].flux_array
         error = lightcurve_objects[i].flux_err
         input_labels = lightcurve_objects[i].input_labels
-        model_median = fitted_lightcurve_list[i]
-        model_upper = upper_lightcurve_list[i]
-        model_lower = lower_lightcurve_list[i]
 
-        lcs = [model_median, model_upper, model_lower]
+        models = samclass.get_arrays_for_sigma_plotting()
 
+        if sigma == 2:
+            lcz = models
+        elif sigma == 1:
+            lcz = models[:3]
+        else:
+            raise ValueError("sigma must be 1 or 2")
+
+        lcs = [lc[i] for lc in lcz]
+        
         hourz = []
         fluxs = []
         errors = []
@@ -671,17 +684,25 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                 xp,yp,ep = rebin(np.linspace(time[0],time[-1],rebin_data),time,flux,e=error,errors_from_rms=False)
                 _,yr,_ = rebin(np.linspace(time[0],time[-1],rebin_data),time,residuals,e=error)
                 hp = mjd2hours(xp,tc)
+
+                if im == 0:
+                    org_hours = hours
+                    org_flux = flux
+                    org_error = error
+                    org_residuals = residuals
             else:
                 hp, yp, ep, yr = hours,flux,error,residuals
-                hourz.append(hp)
-                fluxs.append(yp)
-                errors.append(ep)
-                resz.append(yr)
 
+            hourz.append(hp)
+            fluxs.append(yp)
+            errors.append(ep)
+            resz.append(yr)
+
+        # Mid value is in the middle of the list of models, which is the model with the best fit to the data
 
         if rebin_data is not None:
-            ax[0, i].errorbar(hours, flux, error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
-            ax[0, i].errorbar(hp, yp, ep, fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
+            ax[0, i].errorbar(org_hours, org_flux, org_error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
+            ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
         else:
             try:
                 ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, elinewidth=2, color=cmap(0.1))
@@ -689,16 +710,19 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                 ax[0].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, color=cmap(0.1))
 
 
-
         if gp:
             try:
                 ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
-                ax[0, i].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
+                ax[0, i].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0, i].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
                 ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
                 ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
             except:
                 ax[0].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
-                ax[0].fill_between(hourz[0], mus[2]+modelys[2], mus[1]+modelys[1])
+                ax[0].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
                 ax[0].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
                 ax[0].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
 
@@ -708,9 +732,9 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                 alpha = 1
             for j,m in enumerate(mucs[0]):
                 try:
-                    ax[1, i].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                    ax[1, i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
                 except:
-                    ax[1].plot(hours,(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                    ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
 
                 
         if poly and not gp or exp and not gp:
@@ -718,6 +742,8 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
             try:
                 ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model', lw=3)
                 ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0, i].fill_between(hourz[0], modelys[3], modelys[4], alpha=0.1, color=cmap(0.2))
                 ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model', lw=3)
                 ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=3)
             except:
@@ -725,6 +751,8 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                 ax[0].plot(hourz[0], modelys[2], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
                 ax[0].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
                 ax[0].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0].fill_between(hourz[0], modelys[3], modelys[4], alpha=0.1, color=cmap(0.2))
                 ax[0].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model',lw=1.75)
                 ax[0].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=1.75)
 
@@ -733,9 +761,9 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                 alpha=0.7
                 for j,m in enumerate(polys[0]):
                     try:
-                        ax[1,i].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
+                        ax[1,i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
                     except:
-                        ax[1].plot(hours,(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=2,color=cmap(0.5+(0.15*j)))
+                        ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=2,color=cmap(0.5+(0.15*j)))
 
             if exp:
                 try:
@@ -750,13 +778,19 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
                     ax[1].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
         
         if rebin_data is not None:
-            ax[2, i].errorbar(hours, 1e6*residuals, 1e6*error, fmt='.', ms=5, color=cmap(0.3))
-            ax[2, i].errorbar(hp, yr*1e6, ep*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
+            ax[2, i].errorbar(org_hours, 1e6*org_residuals, 1e6*org_error, fmt='.', ms=5, color=cmap(0.3))
+            ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
         else:
             try:
                 ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+                ax[2, i].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[2, i].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
             except:
                 ax[2].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+                ax[2].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[2].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
             # ax[2, i].fill_between(hourz[0], resz[0]*1e6, resz[1]*1e6, alpha=0.3, color=cmap(0.3))
 
         
@@ -769,8 +803,8 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
             ax[1, 1].legend(fontsize=20)
 
             ax[0, i].set_ylabel('Normalized flux', fontsize=25)
-            ax[1, i].set_ylabel('RN component [ppm]',fontsize=15)
-            ax[2, i].set_ylabel('Residuals [ppm]',fontsize=25)
+            ax[1, i].set_ylabel('RN component [ppm]',fontsize=18)
+            ax[2, i].set_ylabel('Residuals [ppm]',fontsize=18)
             ax[2, i].set_xlabel('Time from mid-transit [hours]',fontsize=25)
         except:
             ax[2].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
@@ -805,9 +839,9 @@ def plot_multiple_lightcurve(nlc, lightcurve_objects, fitted_lightcurve_list, up
 
         if rebin_data is None:
             # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
-            fig.savefig(f'fitted_model_lc_combined{wb}.png',bbox_inches='tight',dpi=200)
+            fig.savefig(save_folder + '/plots/' + f'fitted_model_lc_combined{wb}.png',bbox_inches='tight',dpi=200)
         else:
-            fig.savefig('fitted_model_lc_combined_%s_rebin_%d.png'%(wb,rebin_data),bbox_inches='tight',dpi=200)
+            fig.savefig(save_folder + '/plots/' + f'fitted_model_lc_combined_{wb}_rebin_{rebin_data}.png',bbox_inches='tight',dpi=200)
 
         # fig.close()
 
@@ -874,7 +908,8 @@ def rebin(xbins,x,y,e=None,weighted=False,errors_from_rms=False):
     ebin = np.array(ebin)
     return (xbin,ybin,ebin)
 
-def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False):
+def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False,
+                                  fit_input=None, best_fit_mode='median'):
     """
     A function that generates/recovers the transmission spectrum from the table of best fit parameters resulting from pm_fit.py and gp_fit.py.
 
@@ -895,14 +930,22 @@ def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=Tru
     """
 
     try:
-        best_dict = parseInput('./best_fit_parameters_GP.txt')
+        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
     except:
-        best_dict = parseInput('./best_fit_parameters.txt')
+        if best_fit_mode == 'median':
+            best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_median.txt')
+        elif best_fit_mode == 'likelihood':
+            best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_max_likelihood.txt')
+        else:
+            raise ValueError("best_fit_mode must be either 'median' or 'likelihood'")
 
-    input_dict = parseInput('./fitting_input.txt')
+    try:
+        input_dict = fit_input
+    except:
+        input_dict = parseInput("fitting_input.txt")
 
     # load in data
-    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask,lc_idx=lc_idx)
+    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory, bin_mask, lc_idx=lc_idx)
 
     rp = []
     rp_up = []
@@ -1013,10 +1056,10 @@ def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=Tru
 
     if save_to_tab:
 
-        new_tab = open('transmission_spectrum.txt','w')
+        new_tab = open(directory + '/tables/' + f'transmission_spectrum_{best_fit_mode}.txt','w')
         new_tab.write('# Wavelength bin centre (%s), wavelength bin full width (%s), Rp/Rs, Rp/Rs +ve error, Rp/Rs -ve error'%(determine_wvl_units(w),determine_wvl_units(w)))
 
-        new_tab_2 = open('transmission_spectrum_depths.txt','w')
+        new_tab_2 = open(directory + '/tables/' + f'transmission_spectrum_depths_{best_fit_mode}.txt','w')
         if np.all(d_up == d_low):
             new_tab_2.write('# Wavelength bin centre (%s), wavelength bin full width (%s), Transit depth, Transit depth error'%(determine_wvl_units(w),determine_wvl_units(w)))
         else:
@@ -1071,14 +1114,15 @@ def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=Tru
     if plot_fig:
         if iib:
             if plot_depths:
-                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs**2,iib=True,plot_depths=True)
+                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs**2,iib=True,plot_depths=True,
+                                                 directory=directory)
             else:
-                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs,iib=True)
+                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs,iib=True,directory=directory)
         else:
             if plot_depths:
-                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,plot_depths=True)
+                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,plot_depths=True,directory=directory)
             else:
-                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs)
+                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,directory=directory)
         return fig
     else:
         if plot_depths:
@@ -1119,13 +1163,14 @@ def plot_multi_trans_spec(directory_lists,save_fig=False,plot_fig=False):
         we_all = np.hstack((we_all,we))
 
     if plot_fig:
-        fig = plot_transmission_spectrum(np.array(rp_all),np.array(rp_up_all),np.array(rp_low_all),calibrated_wvl=np.array(w_all),wvl_errors=np.array(we_all),save_fig=save_fig,scale_height=H_Rs)
+        fig = plot_transmission_spectrum(d, np.array(rp_all), np.array(rp_up_all), np.array(rp_low_all), calibrated_wvl=np.array(w_all), wvl_errors=np.array(we_all), save_fig=save_fig, scale_height=H_Rs, directory=directory)
         return fig
     else:
         return np.array(rp_all),np.array(rp_up_all),np.array(rp_low_all),np.array(w_all),np.array(we_all),H_Rs
 
 
-def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_wvl=None,wvl_errors=None,bin_width=250,save_fig=False,scale_height=None,model_atmos=None,iib=False,plot_depths=False):
+def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_wvl=None,wvl_errors=None,bin_width=250,save_fig=False,scale_height=None,model_atmos=None,iib=False,
+                               plot_depths=False,directory='./'):
 
     """
     Function that plots the transmission spectrum (Rp/Rs vs wavelength in Angstroms).
@@ -1212,7 +1257,7 @@ def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_w
                        length=4,width=1.)
 
     if save_fig:
-        plt.savefig('transmission_spectrum.pdf',bbox_inches='tight')
+        plt.savefig(directory + '/plots/' + 'transmission_spectrum.pdf',bbox_inches='tight')
         plt.close()
     else:
         plt.show()
@@ -1235,13 +1280,13 @@ def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=N
     Returns:
     Nothing, it just plots the figure"""
 
-    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'./LD_coefficients_lc{lc_idx}.txt',unpack=True)
+    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'{directory}/LD_coefficients_lc{lc_idx}.txt',unpack=True)
     wvl_error = wvl_error/2
 
     try:
-        best_dict = parseInput('./best_fit_parameters.txt')
+        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_median.txt')
     except:
-        best_dict = parseInput('./best_fit_parameters_GP.txt')
+        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
 
     model_list = glob.glob(f'{directory}/pickled_objects/fitted_lightcurve_model_lc{lc_idx}*.pickle')
     nbins = len(model_list)
@@ -1413,8 +1458,8 @@ def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=N
 
 
     if save_fig:
-        plt.savefig(f'{directory}/expected_vs_calculated_ldcs_lc{lc_idx}.pdf',bbox_inches='tight')
-        plt.savefig(f'{directory}/expected_vs_calculated_ldcs_lc{lc_idx}.png',bbox_inches='tight')
+        plt.savefig(f'{directory}/plots/expected_vs_calculated_ldcs_lc{lc_idx}.pdf',bbox_inches='tight')
+        plt.savefig(f'{directory}/plots/expected_vs_calculated_ldcs_lc{lc_idx}.png',bbox_inches='tight')
         plt.close()
     else:
         plt.show()
@@ -1602,14 +1647,15 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
     y = [pickle.load(open(i,'rb')) for i in flux_files]
     e = [pickle.load(open(i,'rb')) for i in error_files]
     m_in = [pickle.load(open(i,'rb')) for i in model_input_files]
+
     try:
         e_r = [pickle.load(open(i,'rb')) for i in rescaled_error_files]
     except: # we might not have used the rescale error option, so we can't load anything in
         e_r = None
 
     ### Load in LD coefficients table for the wavelength centres and widths of the bins
-    w,we = np.loadtxt(f'./LD_coefficients_lc{lc_idx}.txt',unpack=True,usecols=[0,1])
-    w,we = np.atleast_1d(w)[completed_bins-1],np.atleast_1d(we)[completed_bins-1]
+    w,we = np.loadtxt(f'{directory}/LD_coefficients_lc{lc_idx}.txt',unpack=True,usecols=[0,1])
+    w, we = np.atleast_1d(w)[completed_bins-1], np.atleast_1d(we)[completed_bins-1]
     # w,we = np.atleast_1d(w)[completed_bins],np.atleast_1d(we)[completed_bins]
 
     ### Bin mask
@@ -1633,7 +1679,10 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         x = x[start_bin:end_bin]
         y = y[start_bin:end_bin]
         e = e[start_bin:end_bin]
-        e_r = e_r[start_bin:end_bin]
+        try:
+            e_r = e_r[start_bin:end_bin]
+        except:
+            pass
         model_files = model_files[start_bin:end_bin]
         m_in = m_in[start_bin:end_bin]
         w = w[start_bin:end_bin]
@@ -1730,7 +1779,8 @@ def calc_bin_edges_from_centres(bin_centres):
 
 
 
-def make_corner_plot(sample_chains,bin_number,namelist,parameter_modes,save_fig=False,title=None):
+def make_corner_plot(sample_chains, bin_number, namelist, parameter_modes=None,
+                     save_fig=False, title=None, save_folder=None):
     """Use DFM's corner package to make a corner plot of the emcee chains.
 
     Input:
@@ -1747,21 +1797,34 @@ def make_corner_plot(sample_chains,bin_number,namelist,parameter_modes,save_fig=
 
     print('Generating corner plot...')
     ndim = np.shape(sample_chains)[1]
+    
+    if save_folder is not None:
+            save_folder = save_folder + '/plots/'
+    else:
+        save_folder = ''
 
     fig = corner(sample_chains,labels=namelist,quantiles=[0.16, 0.5, 0.84],verbose=False,show_titles=True)
-    overplot_lines(fig, parameter_modes)
+
+    if parameter_modes is not None:
+        overplot_lines(fig, parameter_modes)
 
     if save_fig:
         if title is not None:
             fig.savefig(title)
         else:
-            fig.savefig('cornerplot_wb%s.png'%(str(bin_number).zfill(4)))
+            fig.savefig(save_folder + 'cornerplot_wb%s.png'%(str(bin_number).zfill(4)))
         plt.close()
     else:
         plt.show()
 
 
-def plot_chains(sampler,burn,wavelength_bin,npars,namelist,discard=0):
+def plot_chains(sampler, burn, wavelength_bin, npars,
+                namelist, discard=0, save_folder=None):
+
+    if save_folder is not None:
+        save_folder = save_folder + '/plots/'
+    else:
+        save_folder = ''
 
     chain = sampler.get_chain(discard=discard)
 
@@ -1784,7 +1847,7 @@ def plot_chains(sampler,burn,wavelength_bin,npars,namelist,discard=0):
 
     fig.tight_layout(h_pad=0.0)
     if burn:
-        fig.savefig('burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+        fig.savefig(save_folder + 'burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
     else:
-        fig.savefig('prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+        fig.savefig(save_folder + 'prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
     plt.close()
