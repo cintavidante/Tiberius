@@ -15,6 +15,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Load in conrolling parameter file
 input_dict = parseInput('fitting_input.txt')
+output_foldername = input_dict['output_foldername']
 LDCs_package = str(input_dict['LDCs_package'])
 wvl_unit = str(input_dict['wvls_unit'])
 error_inflation = float(input_dict['ld_uncertainty_multiplier'])
@@ -415,7 +416,7 @@ for ilightcurve in range(nlc):
 
         return smoothed_u,smoothed_ue
 
-    tab = open('LD_coefficients_lc{}.txt'.format(ilightcurve),'w')
+    tab = open(output_foldername + '/' + 'LD_coefficients_lc{}.txt'.format(ilightcurve),'w')
     tab.write('# Teff = %d +/- %.2f K ; log(g) = %.2f +/- %.2f ; FeH = %.2f +/- %.2f ; u error inflation factor = %.1f \n'%(Teff,Teff_err,logg_star,logg_star_err,FeH,FeH_err,error_inflation))
     tab.write('# %s law used \n'%(ld_law))
     if LDCs_package == 'exotic-ld':
@@ -428,7 +429,7 @@ for ilightcurve in range(nlc):
         tab.write('%f %f %.4f %.4f %.4f %.4f %.4f %.4f %.4f %.4f \n'%(wavelength_centres,wvl_bin_full_width,u1[0],u1e[0],u2[0],u2e[0],u3[0],u3e[0],u4[0],u4e[0]))
     else:
         tab.write("# %d wavelength bins \n"%len(wavelength_centres))
-        smoothed_tab = open('LD_coefficients_smoothed_lc{}.txt'.format(ilightcurve),'w')
+        smoothed_tab = open(output_foldername + '/' + 'LD_coefficients_smoothed_lc{}.txt'.format(ilightcurve),'w')
         smoothed_tab.write('# Teff = %d +/- %.2f K ; log(g) = %.2f +/- %.2f ; FeH = %.2f +/- %.2f ; u error inflation factor = %.1f \n'%(Teff,Teff_err,logg_star,logg_star_err,FeH,FeH_err,error_inflation))
         smoothed_tab.write('# %s law used \n'%(ld_law))
         if LDCs_package == 'exotic-ld':
@@ -461,10 +462,10 @@ for ilightcurve in range(nlc):
         plt.legend()
         plt.xlabel("Wavelength")
         plt.ylabel("Coefficient value")
-        plt.savefig("LD_model_values_lc{}.png".format(ilightcurve),bbox_inches="tight",dpi=360)
+        plt.savefig(output_foldername + '/plots/LD_model_values_lc{}.png'.format(ilightcurve),bbox_inches="tight",dpi=360)
         # plt.show()
 
 
     ### Pickle LDTk model in case we need it later
     if LDCs_package == 'LDTk':
-        pickle.dump(ld_model,open('ldtk_model_lc{}.pickle'.format(ilightcurve),'wb'))
+        pickle.dump(ld_model,open(output_foldername + '/tables/ldtk_model_lc{}.pickle'.format(ilightcurve),'wb'))
