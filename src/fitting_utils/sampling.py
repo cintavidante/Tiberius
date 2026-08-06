@@ -655,7 +655,7 @@ class Sampling(object):
 
 
     def save_LM_results(self,param_medians,param_uncertainties,bin_number,verbose=True):
-        """Function to save the results from an LM fit to a best_fit_parameters.dat and LM_statistics.dat tables equivalent to emcee results.
+        """Function to save the results from an LM fit to a fitted_parameters.dat and LM_statistics.dat tables equivalent to emcee results.
 
         Inputs:
         fitted_lightcurve - the best fitting, resulting, Lightcurvemodel object
@@ -665,18 +665,18 @@ class Sampling(object):
         verbose - True/False - print the best-fitting results to terminal?
 
         Returns:
-        Nothing but saving the results to best_fit_parameters.dat and LM_statistics.txt"""
+        Nothing but saving the results to fitted_parameters.dat and LM_statistics.txt"""
 
         ndim = len(param_medians)
         namelist = self.param_list_free
         output_foldername = self.output_foldername
 
         if bin_number == 0:
-            new_tab = open(output_foldername + 'best_fit_parameters.txt','w')
+            new_tab = open(output_foldername + 'fitted_parameters.txt','w')
         else:
-            new_tab = open(output_foldername + 'best_fit_parameters.txt','a')
+            new_tab = open(output_foldername + 'fitted_parameters.txt','a')
 
-        print('\nSaving best fit parameters to table...\n')
+        print('\nSaving fitted parameters to table...\n')
 
         for i in range(ndim):
             # note, we repeat the uncertainties column twice here even though there is only one uncertainty value, this is so the other functions can better handle this table
@@ -837,13 +837,13 @@ class Sampling(object):
         if save_results:
         
             if bin_number == 1:
-                new_tab = open(output_foldername + '/tables/' + 'best_fit_parameters_median.txt','w')
+                new_tab = open(output_foldername + '/tables/' + 'fitted_parameters_median.txt','w')
                 if print_best_fit:
-                    new_tab_bf = open(output_foldername + '/tables/' + 'best_fit_parameters_max_likelihood.txt','w')
+                    new_tab_bf = open(output_foldername + '/tables/' + 'fitted_parameters_max_likelihood.txt','w')
             else:
-                new_tab = open(output_foldername + '/tables/' + 'best_fit_parameters_median.txt','a')
+                new_tab = open(output_foldername + '/tables/' + 'fitted_parameters_median.txt','a')
                 if print_best_fit:
-                    new_tab_bf = open(output_foldername + '/tables/' + 'best_fit_parameters_max_likelihood.txt','a')
+                    new_tab_bf = open(output_foldername + '/tables/' + 'fitted_parameters_max_likelihood.txt','a')
 
         # Loop to get confidence intervals for each parameter
         for i in range(npars):
@@ -873,7 +873,7 @@ class Sampling(object):
         # Loop to print best fit parameters with median
         if save_results:
 
-            print('\nBest fit parameters with median...\n')
+            print('\nFitted parameters with median...\n')
 
             for i in range(npars):
                 key = namelist[i].replace('$','').replace("\\",'')
@@ -892,13 +892,21 @@ class Sampling(object):
         # Loop to print best fit parameters with highest log likelihood
             if print_best_fit:
 
-                print('\nBest fit parameters with highest log likelihood...\n')
+                new_tab_bf.write('# Uncertainties are still calculated from 68% confidence interval!\n')
+                new_tab_bf.write('# If the uncertainties are lower than 0, values from the highest likelihood is outside of the confidence interval, which should NOT happen! \n')
+                new_tab_bf.write('# If it does, please re-evaluate! \n')
+
+                print('\nFitted parameters with highest log likelihood...\n')
 
                 for i in range(npars):
 
                     key = namelist[i].replace('$','').replace("\\",'')
                     mid_value = best_fit_logl[i]
                     write_parameters_bf = f'{key}_{bin_number:d} = {mid_value:.6f} + {arr_high1[i] - mid_value:.6f} - {mid_value - arr_low1[i]:.6f}'
+
+                    if (arr_high1[1] - mid_value < 0) or (mid_value - arr_low1[i] < 0):
+                        print('Warning! Parameter from highest likelihood is outside the percentile! Re-evaluate!')
+
                     new_tab_bf.write(write_parameters_bf + "\n")
 
                     if verbose:
@@ -940,7 +948,7 @@ class Sampling(object):
         bin_number - the number of the wavelength bin we're considering. Necessary for printing and saving to file.
         verbose - True/False: do we want to print the results to screen?
         save_result - True/False: do we want to save the results to a table?
-        burn - True/False: is this a burn-in chain? If so, save to burn_parameters.dat, else save to best_fit_parameters.dat
+        burn - True/False: is this a burn-in chain? If so, save to burn_parameters.dat, else save to fitted_parameters.dat
 
         Returns:
         (median, upper bound, lower bound) with shape (nparameters,3)
@@ -973,14 +981,14 @@ class Sampling(object):
                     new_tab = open('burn_parameters.txt','w')
                     # new_tab_2 = open('parameter_modes_burn.txt','w')
                 else:
-                    new_tab = open('best_fit_parameters.txt','w')
+                    new_tab = open('fitted_parameters.txt','w')
                     new_tab_2 = open('parameter_modes_prod.txt','w')
             else:
                 if burn:
                     new_tab = open('burn_parameters.txt','a')
                     # new_tab_2 = open('parameter_modes_burn.txt','a')
                 else:
-                    new_tab = open('best_fit_parameters.txt','a')
+                    new_tab = open('fitted_parameters.txt','a')
                     new_tab_2 = open('parameter_modes_prod.txt','a')
 
         for i in range(ndim):
@@ -1008,7 +1016,7 @@ class Sampling(object):
                     print("%s_%d (mode of posterior) = %f (%d counts = %.2f%%) \n"%(namelist[i].replace('$','').replace("\\",''),bin_number,mode_value[0],mode_count[0],100*mode_count[0]/len(par)))
 
         if save_result:
-            print('\nSaving best fit parameters to table...\n')
+            print('\nSaving fitted parameters to table...\n')
             new_tab.write('#------------------ \n')
             new_tab.close()
 
@@ -1036,9 +1044,9 @@ class Sampling(object):
 
         output_foldername = self.output_foldername
         if best_fit_median:
-            best_fit_file = "best_fit_parameters_median.txt"
+            best_fit_file = "fitted_parameters_median.txt"
         else:
-            best_fit_file = "best_fit_parameters_max_likelihood.txt"
+            best_fit_file = "fitted_parameters_max_likelihood.txt"
 
         # -------------------------------------------
         # Load best-fit parameters

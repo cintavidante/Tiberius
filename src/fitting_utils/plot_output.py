@@ -241,8 +241,8 @@ for ilc in range(nlc):
 
             print("Contact 1 = %d; Contact 2 = %d; Contact 3 = %d; Contact 4 = %d"%(contact1,contact2,contact3,contact4))
 
-    # why is this here? it's making the residuals 0!
-    residuals = np.atleast_1d(np.array(residuals)) # can be different lengths due to outlier clipping
+    # the shape can be different because of clipping outliers. this line will not work!
+    # residuals = np.atleast_1d(np.array(residuals))
 
     if nbins == 1:
         ncols = 1
@@ -269,9 +269,12 @@ for ilc in range(nlc):
     bin_counter = 0
 
     for plot_no in range(nplots):
+
         fig = plt.figure(figsize=(ncols*5,nrows*2.5))
         subplot_counter = 1
+
         for i in range(bin_counter,nbins):
+
             if subplot_counter > nrows*ncols:
                 continue
 
@@ -287,13 +290,16 @@ for ilc in range(nlc):
             npoints_per_bin = np.hstack((np.linspace(1,max_points,1000),max_points))
 
             for j in npoints_per_bin:
+
                 if j == 1:
                     rms.append(np.sqrt(np.nanmean(np.square(residuals[i]))))
                     time_steps.append(np.diff(x[i]).mean()*24*60)
                     bin_size.append(1)
                 else:
+
                     bins = np.linspace(x[i][0],x[i][-1],int(len(x[i])/j))
                     time_steps.append(np.diff(bins).mean()*24*60)
+
                     binned_x,binned_y,binned_e = pu.rebin(bins,x[i],residuals[i],e[i],weighted=False)
                     rms.append(np.sqrt(np.nanmean(np.square(binned_y))))
                     N = float(len(residuals[i]))/float((len(bins)))
@@ -356,9 +362,9 @@ for ilc in range(nlc):
 
         if args.save_fig:
             if nbins > 10:
-                plt.savefig(output_foldername + '/plots/rms_vs_bins_%s.png'%(str(plot_no+1).zfill(4)),bbox_inches='tight',dpi=200)
+                plt.savefig(output_foldername + f'/plots/rms_vs_bins_{str(plot_no+1).zfill(4)}_lc{ilc}.png',bbox_inches='tight',dpi=200)
             else:
-                plt.savefig(output_foldername + '/plots/rms_vs_bins_%s.pdf'%(str(plot_no+1).zfill(4)),bbox_inches='tight')
+                plt.savefig(output_foldername + f'/plots/rms_vs_bins_{str(plot_no+1).zfill(4)}_lc{ilc}.pdf',bbox_inches='tight')
         if not args.close_plots:
             plt.show()
         plt.close()

@@ -1,1 +1,2 @@
-./data/v2_nrs1/zero_time_v2.pickle
+data/n2/WVL_from3600/am_norm.pickle
+data/n2/WVL_from3600/time_norm.pickle

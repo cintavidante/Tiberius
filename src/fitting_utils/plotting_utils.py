@@ -879,6 +879,15 @@ def rebin(xbins,x,y,e=None,weighted=False,errors_from_rms=False):
         bin_y_vals = y[digitized == i]
         bin_x_vals = x[digitized == i]
 
+        # Remove NaNs
+        mask = np.isfinite(bin_x_vals) & np.isfinite(bin_y_vals)
+        bin_x_vals = bin_x_vals[mask]
+        bin_y_vals = bin_y_vals[mask]
+
+        # Making sure the bin is not empty
+        if len(bin_x_vals) == 0:
+            continue
+
         if weighted:
             if e is None:
                 raise Exception('Cannot compute weighted mean without Falseerrors')
@@ -933,9 +942,9 @@ def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=Tru
         best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
     except:
         if best_fit_mode == 'median':
-            best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_median.txt')
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_median.txt')
         elif best_fit_mode == 'likelihood':
-            best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_max_likelihood.txt')
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_max_likelihood.txt')
         else:
             raise ValueError("best_fit_mode must be either 'median' or 'likelihood'")
 
@@ -1264,7 +1273,7 @@ def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_w
 
     return fig
 
-def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=None):
+def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=None, best_fit_mode='median'):
 
     """
     Function to plot the expected (LDTk-generated) quadratic limb darkening coefficients vs. the actual fitted limb darkening coefficients.
@@ -1284,7 +1293,12 @@ def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=N
     wvl_error = wvl_error/2
 
     try:
-        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_median.txt')
+        if best_fit_mode == 'median':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_median.txt')
+        elif best_fit_mode == 'likelihood':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_max_likelihood.txt')
+        else:
+            raise ValueError("best_fit_mode must be either 'median' or 'likelihood'")
     except:
         best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
 
