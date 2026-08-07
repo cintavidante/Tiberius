@@ -1,0 +1,3 @@
+data/n1/WVL_from3600/am_norm.pickle
+data/n1/WVL_from3600/sky_norm.pickle
+data/n1/WVL_from3600/time_norm.pickle

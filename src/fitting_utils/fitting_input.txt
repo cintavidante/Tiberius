@@ -6,16 +6,15 @@
 ### INPUT FILES
 
 # Light curve inputs
-time_file =  # a path that points to a pickled numpy array of times.
-flux_file =	#  a path that points to a pickled numpy array of fluxes. If this is for a white light curve it should have shape (1,). Otherwise for wavelength-binned fits, it should have shape = (nbins,nfluxes)
-error_file = #  a path that points to a pickled numpy array of fluxes. If this is for a white light curve it should have shape (1,). Otherwise for wavelength-binned fits, it should have shape = (nbins,nfluxes)
+time_file = data/n1/WVL_from3600/time_norm.pickle,data/n2/WVL_from3600/time_norm.pickle # a path that points to a pickled numpy array of times.
+flux_file = data/n1/WVL_from3600/white_light_flux.pickle,data/n2/WVL_from3600/white_light_flux.pickle #  a path that points to a pickled numpy array of fluxes. If this is for a white light curve it should have shape (1,). Otherwise for wavelength-binned fits, it should have shape = (nbins,nfluxes)
+error_file = data/n1/WVL_from3600/white_light_error.pickle,data/n2/WVL_from3600/white_light_error.pickle #  a path that points to a pickled numpy array of fluxes. If this is for a white light curve it should have shape (1,). Otherwise for wavelength-binned fits, it should have shape = (nbins,nfluxes)
 
-wvl_centres = 5	# either a single number (in case of white light curve) OR a pickled numpy array of wavlength bin centres. 
-wvl_bin_full_width =	# either a single number (in case of white light curve) OR a pickled numpy array of wavlength bin centres. This is the FULL WIDTH of the bin NOT the width/2.
-wvls_unit = micron # either angstrom or micron
+wvl_centres = 5415,5415	# either a single number (in case of white light curve) OR a pickled numpy array of wavlength bin centres. 
+wvl_bin_full_width = 3470,3470 	# either a single number (in case of white light curve) OR a pickled numpy array of wavlength bin centres. This is the FULL WIDTH of the bin NOT the width/2.
+wvls_unit = angstrom # either angstrom or micron
 
 transit_model = batman # either batman or catwoman
-
 
 ### LIMB DARKENING; including whether we want priors and the parameters of the host star
 generate_LDCs = 1 # do you want to generate LDCs? Set to 1 (on) or 0 (off).
@@ -24,48 +23,47 @@ ld_law = quadratic # choose between linear/quadratic/squareroot/nonlinear/
 replace_negative_LDCs = 0 # do you want to replace negative values generated for u1 and u2? Set to 1 (on) or 0 (off).
 
 # if using exotic-ld please define the following:
-exotic-ld_data_path = /path/to/exotic_package_data
-exotic-ld_model_dim = 3D
-exotic-ld_instrument_mode = JWST_NIRSpec_G395H
+exotic-ld_data_path = ../exotic_ld_data/
+exotic-ld_model_dim = mps1
+exotic-ld_instrument_mode = EFOSC2
+exotic-ld_throughput = ../exotic_ld_data/throughput_HATP65.pickle
 
 # Stellar parameters, for limb darkening coefficients
-Teff = 			# Stellar effective temperature in K
-Teff_err = 		# Error in stellar effective temperature, in K
-logg_star = 	# log(g) of star
-logg_star_err =  # error in  log(g) of star
-FeH = 			# Fe/H of star
-FeH_err = 		# error in Fe/H of star
+Teff = 6050		# Stellar effective temperature in K
+Teff_err = 100		# Error in stellar effective temperature, in K
+logg_star = 4.17	# log(g) of star
+logg_star_err = 0.02 # error in  log(g) of star
+FeH = 0.4 			# Fe/H of star
+FeH_err = 0.05	# error in Fe/H of star
 
 # for fitting the Limb-darkening
 use_generated_ld = 1 # do you want to use the generated LDCs values for the limb-darkening? Set to 1 (on) or 0 (off). If limb-darkening values are set to 'fixed' and this is set to 1, then the generated LDCs will be used as fixed values for the fits.
-use_generated_ld_as_prior = 1 # do you want to use the values and their uncertainties from the generated LDCs as a Gaussian prior? Set to 1 (on) or 0 (off). Note that this will overwrite the prior information in the prior file. 
+use_generated_ld_as_prior = 0 # do you want to use the values and their uncertainties from the generated LDCs as a Gaussian prior? Set to 1 (on) or 0 (off). Note that this will overwrite the prior information in the prior file. 
 ld_uncertainty_multiplier = 3 	# If wanting to inflate the error bars on the LDCs from the generated LDCs, set this to a factor. e.g. setting to 3, inflates errors by a factor of 3. Only used if use_generated_ld_uncertainties = 1.
 use_kipping_parameterisation = 0	# Use if wanting to use Kipping's change of variables for efficient sampling of LDCs. NOTE: NOT FULLY TESTED. Set to 1 (on) or 0 (off).
 
-
-
 ### FITTING PARAMETERS
-prior_filename = example_prior_def_file.txt
+prior_filename = prior_n1.txt,prior_n2.txt
 
-contact1 = 		# position of the first contact point in frame numbers. Used to define the out of transit data, if wanting to optimise GP hyperparams to out of transit data and/or renormalising flux to out-of-transit data.
-contact4 = 		# position of the fourth contact point in frame numbers. Used to define the out of transit data, if wanting to optimise GP hyperparams to out of transit data and/or renormalising flux to out-of-transit data.
+contact1 = 0,14		# position of the first contact point in frame numbers. Used to define the out of transit data, if wanting to optimise GP hyperparams to out of transit data and/or renormalising flux to out-of-transit data.
+contact4 = 40,54	# position of the fourth contact point in frame numbers. Used to define the out of transit data, if wanting to optimise GP hyperparams to out of transit data and/or renormalising flux to out-of-transit data.
 
-first_integration = 0 # this allows you to clip the first N integrations from your light curves. This uses Python indexing.
-last_integration = -1 # this allows you to clip the last N integrations from your light curves. This uses Python indexing.
+first_integration = # this allows you to clip the first N integrations from your light curves. This uses Python indexing.
+last_integration =  # this allows you to clip the last N integrations from your light curves. This uses Python indexing.
 
 common_noise_model = 	# a path to a pickled common noise model. Leave blank if not wanting to perform a common mode correction
 clip_outliers = 1		# do you want to clip outliers before fitting? Set to 1 (on) or 0 (off).
 sigma_cut =  4           # choose the sigma cut level (e.g. 3 sigma, 4 sigma) can be a float
-median_clip = 0      # define whether you want to clip the outliers using a running median (1) or using a transit light curve fit (0). Currently only implemented for TransitModelGPPM
+median_clip = 1      # define whether you want to clip the outliers using a running median (1) or using a transit light curve fit (0). Currently only implemented for TransitModelGPPM
 
 renorm_flux = 0 # do we want to renormalise the flux to give an out of transit median of unity? Set to 1 (on) or 0 (off).
 
-
 ## FOR PARAMETRIC MODELLING
-model_input_files =  # paths that point to an arbitrary number of pickled arrays of detrending inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
-normalise_inputs = 1	# do we want to normalise the ancillary data? This is done through (input - mean(input))/std(input).  Set to 1 (on) or 0 (off).
+model_input_files = model1_input.txt,model2_input.txt # paths that point to an arbitrary number of pickled arrays of detrending inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
+model_input_labels = airmass,sky,time;airmass,time
+normalise_inputs = 0	# do we want to normalise the ancillary data? This is done through (input - mean(input))/std(input).  Set to 1 (on) or 0 (off).
 
-polynomial_orders = 		 	# What order polynomials are being used to model the systematic model inputs? Can be left blank if not using a polynomial. Note the inputs are those defined in the above 'model_input_files' and so must have the same length. e.g. for 3 model input files, you could set polynomial_orders to 0,1,2 (which would be 0th order/ignored first model input, 1st order poly to second input, 2nd order poly to 3rd input)
+polynomial_orders = 1,2,1;1,1		 	# What order polynomials are being used to model the systematic model inputs? Can be left blank if not using a polynomial. Note the inputs are those defined in the above 'model_input_files' and so must have the same length. e.g. for 3 model input files, you could set polynomial_orders to 0,1,2 (which would be 0th order/ignored first model input, 1st order poly to second input, 2nd order poly to 3rd input)
 
 exponential_ramp = 0 # do you want to use an exponential ramp in your fitting? If yes, set this to an integer >= 1, where the number sets the number of exponentials to use. If not wanting to use an exponential ramp, keep this as 0.
 
@@ -88,9 +86,10 @@ sampling_method = dynesty # either emcee or dynesty
 
 ## MCMC PARAMETERS
 
-nwalkers =	20	# number of emcee walkers. Must be an even integer.
-nsteps =  auto 		# number of emcee steps. Note, set this to "auto" if wanting to let the autocorrelation length automatically determine the length of the chains. Note: these will never run over 20,000 steps even it autocorrelation is not satisfied. ***Set to 0 if wanting to perform a Levernberg-Marquadt fit with no MCMC!***
-nthreads = 	2	# number of threads. NOTE: sometimes multi-threading conks out.
+nwalkers =	8	# number of emcee walkers. Must be an even integer.
+nsteps =  5000 		# number of emcee steps. Note, set this to "auto" if wanting to let the autocorrelation length automatically determine the length of the chains. Note: these will never run over 20,000 steps even it autocorrelation is not satisfied. ***Set to 0 if wanting to perform a Levernberg-Marquadt fit with no MCMC!***
+ndiscard = 2000 # number of burn steps
+nthreads = 	1	# number of threads. NOTE: sometimes multi-threading conks out.
 prod_only = 0   # do you want to run a single MCMC run all the way through (1) or break this up into an initial chain, followed by a 'production' chain (0). The latter is the default and is necessary if not using a GP so that the photometric uncertainties can be rescaled
 save_chain = 0 # do we want to save the chains to text files: yes (1) or no (0). If yes, this can take up a lot of storage
 optimise_model = 	1		# optimise the model parameters using a Nelder-Mead algorithm before starting the MCMC? Set to 1 (on) or 0 (off).
@@ -102,18 +101,17 @@ precision_crit = 1e-3  # ratio between prior and posterior space where the neste
 
 
 ### Plotting and Saving
-show_plots = 1 # Do you want to plot intermediate plots of the fit outputs? Set to 1 (on) or 0 (off).
+show_plots = 0 # Do you want to plot intermediate plots of the fit outputs? Set to 1 (on) or 0 (off).
 save_plots = 1 # Do you want to plot intermediate plots of the fit outputs? Set to 1 (on) or 0 (off).
 rebin_data = 	# can choose to bin the data for purposes of plotting. set this number to number of bins desired. Can be left blank.
 
-output_foldername = fitting_1
-
+output_foldername = fitting_01
 # PLANET PARAMETERS, NEEDED TO CALCULATE SCALE HEIGHT FOR TRANSMISSION SPECTRUM IN plot_output.py
 
-rp = 	# planet's radius in Jupiter radii
-rs = 	# star's radius in solar radii
-logg =  # logg of the planet OR can define:
+rp = 1.611 # planet's radius in Jupiter radii
+rs = 1.666 # star's radius in solar radii
+logg = 2.724 # logg of the planet OR can define:
 g = 	# surface gravity of planet (in m/s^2)
-Teq = # equilibrium temperature of planet in K
+Teq = 1818 # equilibrium temperature of planet in K
 
 

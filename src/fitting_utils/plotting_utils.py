@@ -2,6 +2,7 @@
 #### Contact: jameskirk@live.co.uk
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 from scipy.optimize import curve_fit
 import astropy.constants as c
@@ -368,7 +369,8 @@ def plot_models(model_list,time,flux_array,error_array,wvl_centre,rebin_data=Non
     return fig
 
 
-def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,systematics_model_inputs=None):
+def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=False,wavelength_bin=None,deconstruct=True,plot_residual_std=0,
+                      systematics_model_inputs=None, save_folder=None):
     """
     Plot a single light curve with model.
 
@@ -377,6 +379,7 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
     time - array of times
     flux - array of fluxes
     error - array of errors on fluxes
+    lc_idx - int, lightcurve index in the stack of fitted light curves (index 0 if single lightcurve fit)
     rebin_data - set to integer if wanting to re-bin the data. Default = None (no binning)
     save_fig - True/False: save the figure to file? Default=False
     wavelength_bin - the number of the wavelength bin being plotted, useful for saving to file. Default=None
@@ -392,14 +395,19 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
         tc = model.param_dict['t_secondary'].currVal
         model_name = 'eclipse'
     except:
-        tc = model.param_dict['t_secondary']
-        model_name = 'eclipse'
         try:
-            tc = model.param_dict['t0'].currVal
-            model_name = 'transit'
+            tc = model.param_dict['t_secondary']
+            model_name = 'eclipse'
         except:
-            tc = model.param_dict['t0']
-            model_name = False
+            try:
+                tc = model.param_dict['t0'].currVal
+                model_name = 'transit'
+            except:
+                try:
+                    tc = model.param_dict['t0']
+                    model_name = False
+                except:
+                    pass
 
     fig = plt.figure()
 
@@ -557,9 +565,9 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
 
         if rebin_data is None:
             # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
-            plt.savefig('fitted_model%s.png'%wb,bbox_inches='tight',dpi=200)
+            plt.savefig(save_folder + '/plots/' + f'fitted_model_lc{lc_idx}{wb}.png',bbox_inches='tight',dpi=200)
         else:
-            plt.savefig('fitted_model%s_rebin_%d.png'%(wb,rebin_data),bbox_inches='tight',dpi=200)
+            plt.savefig(save_folder + '/plots/' + f'fitted_model_lc%s_%s_rebin_%d.png'%(lc_idx,wb,rebin_data),bbox_inches='tight',dpi=200)
 
         plt.close()
 
@@ -569,6 +577,280 @@ def plot_single_model(model,time,flux,error,rebin_data=None,save_fig=False,wavel
         plt.pause(5)
         plt.close()
 
+    return fig
+
+def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2, 
+                             rebin_data=None, systematics_model_inputs=None, deconstruct=True, 
+                             plot_residual_std=0, save_fig=False, wavelength_bin=None,
+                             save_folder=None):
+    
+    """
+    Plot joint fit in one image.
+    """
+
+    label_size = 25 # used to be 8
+    mpl.rcParams['xtick.labelsize'] = label_size 
+    mpl.rcParams['ytick.labelsize'] = label_size 
+
+    cmap = plt.cm.inferno
+
+    fig, ax = plt.subplots(3, nlc, figsize=[nlc*20,15], gridspec_kw={'height_ratios': [3, 1, 1]})
+
+    for i in range(nlc):
+
+        # Call arrays
+        time = lightcurve_objects[i].time_array
+        flux = lightcurve_objects[i].flux_array
+        error = lightcurve_objects[i].flux_err
+        input_labels = lightcurve_objects[i].input_labels
+
+        models = samclass.get_arrays_for_sigma_plotting()
+
+        if sigma == 2:
+            lcz = models
+        elif sigma == 1:
+            lcz = models[:3]
+        else:
+            raise ValueError("sigma must be 1 or 2")
+
+        lcs = [lc[i] for lc in lcz]
+        
+        hourz = []
+        fluxs = []
+        errors = []
+        modelys = []
+        oots = []
+        mus = []
+        mucs = []
+        polys = []
+        resz = []
+
+        for im, model in enumerate(lcs):
+
+            try:
+                tc = model.t0.currVal
+            except:
+                try:
+                    tc = model.param_dict['t0'].currVal
+                except:
+                    tc = model.param_dict['t0']
+            
+            gp = model.GP_used
+
+            # Call systematic models
+            systematics_model = model.systematic_model
+            poly = systematics_model.poly_used
+            exp = systematics_model.exp_ramp_used
+            step = systematics_model.step_func_used
+
+            # convert times from days to hours from mid-transit
+            hours = mjd2hours(time, tc)
+
+            # calculate M&A transit model
+            model_y = model.calc(time,systematics_model_inputs)
+            modelys.append(model_y)
+            oot = 1
+
+            if poly:# and not gp:
+                if deconstruct:
+                    oot,poly_components = systematics_model.red_noise_poly(time,deconstruct_polys=True)
+                    polys.append(poly_components)
+                else:
+                    oot = systematics_model.red_noise_poly(time)
+
+            if exp:
+                exp_ramp = systematics_model.exponential_ramp(time)
+                oot *= exp_ramp
+
+            if step:
+                step_func = systematics_model.step_function(time)
+                oot *= step_func
+            
+            oots.append(oot)
+
+            if gp:
+                if deconstruct:
+                    mu,std,mu_components = model.calc_gp_component(time,flux,error,deconstruct_gp=True)
+                    mus.append(mu)
+                    mucs.append(mucs)
+                else:
+                    mu,std = model.calc_gp_component(time,flux,error,deconstruct_gp=False)
+                    mus.append(mu)
+                residuals = flux - model_y - mu
+            else:
+                residuals = flux - model_y
+
+            if rebin_data is not None:
+                xp,yp,ep = rebin(np.linspace(time[0],time[-1],rebin_data),time,flux,e=error,errors_from_rms=False)
+                _,yr,_ = rebin(np.linspace(time[0],time[-1],rebin_data),time,residuals,e=error)
+                hp = mjd2hours(xp,tc)
+
+                if im == 0:
+                    org_hours = hours
+                    org_flux = flux
+                    org_error = error
+                    org_residuals = residuals
+            else:
+                hp, yp, ep, yr = hours,flux,error,residuals
+
+            hourz.append(hp)
+            fluxs.append(yp)
+            errors.append(ep)
+            resz.append(yr)
+
+        # Mid value is in the middle of the list of models, which is the model with the best fit to the data
+
+        if rebin_data is not None:
+            ax[0, i].errorbar(org_hours, org_flux, org_error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
+            ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
+        else:
+            try:
+                ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, elinewidth=2, color=cmap(0.1))
+            except:
+                ax[0].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, color=cmap(0.1))
+
+
+        if gp:
+            try:
+                ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+                ax[0, i].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0, i].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
+                ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
+                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+            except:
+                ax[0].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+                ax[0].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
+                ax[0].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
+                ax[0].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+
+            if len(mu_components) > 1:
+                alpha = 0.5
+            else:
+                alpha = 1
+            for j,m in enumerate(mucs[0]):
+                try:
+                    ax[1, i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                except:
+                    ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+
+                
+        if poly and not gp or exp and not gp:
+
+            try:
+                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model', lw=3)
+                ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0, i].fill_between(hourz[0], modelys[3], modelys[4], alpha=0.1, color=cmap(0.2))
+                ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model', lw=3)
+                ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=3)
+            except:
+                ax[0].plot(hourz[0], modelys[1], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[2], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
+                ax[0].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[0].fill_between(hourz[0], modelys[3], modelys[4], alpha=0.1, color=cmap(0.2))
+                ax[0].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model',lw=1.75)
+                ax[0].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=1.75)
+
+
+            if poly:
+                alpha=0.7
+                for j,m in enumerate(polys[0]):
+                    try:
+                        ax[1,i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
+                    except:
+                        ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=2,color=cmap(0.5+(0.15*j)))
+
+            if exp:
+                try:
+                    ax[1, i].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+                except:
+                    ax[1].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+
+            if step:
+                try:
+                    ax[1, i].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+                except:
+                    ax[1].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+        
+        if rebin_data is not None:
+            ax[2, i].errorbar(org_hours, 1e6*org_residuals, 1e6*org_error, fmt='.', ms=5, color=cmap(0.3))
+            ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
+        else:
+            try:
+                ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+                ax[2, i].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[2, i].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
+            except:
+                ax[2].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+                ax[2].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
+                if sigma == 2:
+                    ax[2].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
+            # ax[2, i].fill_between(hourz[0], resz[0]*1e6, resz[1]*1e6, alpha=0.3, color=cmap(0.3))
+
+        
+        try:
+            ax[2, i].axhline(0, ls='--', color=cmap(0.3), linewidth=2)
+
+            ax[0, 0].legend(loc='lower right', fontsize=20)
+            ax[0, 1].legend(loc='lower left', fontsize=20)
+            ax[1, 0].legend(loc='lower left', fontsize=20)
+            ax[1, 1].legend(fontsize=20)
+
+            ax[0, i].set_ylabel('Normalized flux', fontsize=25)
+            ax[1, i].set_ylabel('RN component [ppm]',fontsize=18)
+            ax[2, i].set_ylabel('Residuals [ppm]',fontsize=18)
+            ax[2, i].set_xlabel('Time from mid-transit [hours]',fontsize=25)
+        except:
+            ax[2].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
+
+            ax[0].legend(loc='lower left')
+            ax[1].legend()
+
+            ax[0].set_ylabel('Normalized flux', fontsize=14)
+            ax[1].set_ylabel('RN component [ppm]',fontsize=14)
+            ax[2].set_ylabel('Residuals [ppm]',fontsize=14)
+            ax[2].set_xlabel('Time from mid-transit [hours]',fontsize=14)
+
+
+        # if plot_residual_std > 0:
+        #     print("plotting outliers")
+        #     rms = np.sqrt(np.mean(yr**2))*1e6
+
+        #     ax[2, i].axhline(plot_residual_std*rms,ls='--',color='r')
+        #     ax[2, i].axhline(-plot_residual_std*rms,ls='--',color='r')
+
+        #     if gp:
+        #         wn_var = np.exp(model.starting_gp_object.white_noise.get_value(time))
+        #         wn_std = np.sqrt(wn_var)
+        #         plt.fill_between(hours,-plot_residual_std*(std+wn_std),+plot_residual_std*(std+wn_std),
+        #                 color="k", alpha=0.2)
+        
+    if save_fig:
+        if wavelength_bin is not None:
+            wb = '_wb%s'%(str(wavelength_bin+1).zfill(4))
+        else:
+            wb = ''
+
+        if rebin_data is None:
+            # ~ plt.savefig('fitted_model%s.pdf'%wb,bbox_inches='tight')
+            fig.savefig(save_folder + '/plots/' + f'fitted_model_lc_combined{wb}.png',bbox_inches='tight',dpi=200)
+        else:
+            fig.savefig(save_folder + '/plots/' + f'fitted_model_lc_combined_{wb}_rebin_{rebin_data}.png',bbox_inches='tight',dpi=200)
+
+        # fig.close()
+
+    # else:
+        # plt.show()
+        # fig.show(block=False) # only show for 5 seconds. This is necessary when running fits to multiple bins so that the code doesn't have to wait for user to manually close windows before continuing.
+        # fig.pause(5)
+        # fig.close()
+    
     return fig
 
 
@@ -596,6 +878,15 @@ def rebin(xbins,x,y,e=None,weighted=False,errors_from_rms=False):
     for i in range(1,len(xbins)):
         bin_y_vals = y[digitized == i]
         bin_x_vals = x[digitized == i]
+
+        # Remove NaNs
+        mask = np.isfinite(bin_x_vals) & np.isfinite(bin_y_vals)
+        bin_x_vals = bin_x_vals[mask]
+        bin_y_vals = bin_y_vals[mask]
+
+        # Making sure the bin is not empty
+        if len(bin_x_vals) == 0:
+            continue
 
         if weighted:
             if e is None:
@@ -626,15 +917,17 @@ def rebin(xbins,x,y,e=None,weighted=False,errors_from_rms=False):
     ebin = np.array(ebin)
     return (xbin,ybin,ebin)
 
-def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False):
+def recover_transmission_spectrum(directory,lc_idx=0,save_fig=False,plot_fig=True,bin_mask=None,save_to_tab=False,iib=False,plot_depths=False,
+                                  fit_input=None, best_fit_mode='median'):
     """
     A function that generates/recovers the transmission spectrum from the table of best fit parameters resulting from pm_fit.py and gp_fit.py.
 
     Input:
     directory - the directory containing the best_fit_parameters.dat, fitting_input.txt, fitted_lightcurve_model*.pickle and LD_coefficients.dat files
-    save_fig - True/False: save the outputted transmission spectrum or not? Default=False
-    plot_fig - True/False: plot the outputted transmission spectrum or not? If False, code returns numpy arrays of Rp/Rs and errors. Default=True
-    bin_mask - set to a list of integers to mask certain wavelength bins from the transmission spectrum if desired. Indexed from 0. Default = None (no masking).
+    lc_idx    - int, index of lightcurve (0 if single lightcurve fit)
+    save_fig  - True/False: save the outputted transmission spectrum or not? Default=False
+    plot_fig  - True/False: plot the outputted transmission spectrum or not? If False, code returns numpy arrays of Rp/Rs and errors. Default=True
+    bin_mask  - set to a list of integers to mask certain wavelength bins from the transmission spectrum if desired. Indexed from 0. Default = None (no masking).
     save_to_tab - True/False: if True, saves transmission spectrum to .dat text file. Default=False
     iib - True/False: - If this is an iib fit to Na or K then plot the transmission spectrum with wvl_error on x-axis.
     plot_depths - True/False: - Use this to plot in transit depth rather than Rp/Rs. Default=False (Rp/Rs).
@@ -646,14 +939,22 @@ def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mas
     """
 
     try:
-        best_dict = parseInput('./best_fit_parameters_GP.txt')
+        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
     except:
-        best_dict = parseInput('./best_fit_parameters.txt')
+        if best_fit_mode == 'median':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_median.txt')
+        elif best_fit_mode == 'likelihood':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_max_likelihood.txt')
+        else:
+            raise ValueError("best_fit_mode must be either 'median' or 'likelihood'")
 
-    input_dict = parseInput('./fitting_input.txt')
+    try:
+        input_dict = fit_input
+    except:
+        input_dict = parseInput("fitting_input.txt")
 
     # load in data
-    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory,bin_mask)
+    x,y,e,e_r,m,m_in,w,we,completed_bins,nbins = load_completed_bins(directory, bin_mask, lc_idx=lc_idx)
 
     rp = []
     rp_up = []
@@ -764,10 +1065,10 @@ def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mas
 
     if save_to_tab:
 
-        new_tab = open('transmission_spectrum.txt','w')
+        new_tab = open(directory + '/tables/' + f'transmission_spectrum_{best_fit_mode}.txt','w')
         new_tab.write('# Wavelength bin centre (%s), wavelength bin full width (%s), Rp/Rs, Rp/Rs +ve error, Rp/Rs -ve error'%(determine_wvl_units(w),determine_wvl_units(w)))
 
-        new_tab_2 = open('transmission_spectrum_depths.txt','w')
+        new_tab_2 = open(directory + '/tables/' + f'transmission_spectrum_depths_{best_fit_mode}.txt','w')
         if np.all(d_up == d_low):
             new_tab_2.write('# Wavelength bin centre (%s), wavelength bin full width (%s), Transit depth, Transit depth error'%(determine_wvl_units(w),determine_wvl_units(w)))
         else:
@@ -822,14 +1123,15 @@ def recover_transmission_spectrum(directory,save_fig=False,plot_fig=True,bin_mas
     if plot_fig:
         if iib:
             if plot_depths:
-                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs**2,iib=True,plot_depths=True)
+                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs**2,iib=True,plot_depths=True,
+                                                 directory=directory)
             else:
-                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs,iib=True)
+                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=we,wvl_errors=None,save_fig=save_fig,scale_height=H_Rs,iib=True,directory=directory)
         else:
             if plot_depths:
-                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,plot_depths=True)
+                fig = plot_transmission_spectrum(d,d_up,d_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,plot_depths=True,directory=directory)
             else:
-                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs)
+                fig = plot_transmission_spectrum(rp,rp_up,rp_low,calibrated_wvl=w,wvl_errors=we/2,save_fig=save_fig,scale_height=H_Rs,directory=directory)
         return fig
     else:
         if plot_depths:
@@ -870,13 +1172,14 @@ def plot_multi_trans_spec(directory_lists,save_fig=False,plot_fig=False):
         we_all = np.hstack((we_all,we))
 
     if plot_fig:
-        fig = plot_transmission_spectrum(np.array(rp_all),np.array(rp_up_all),np.array(rp_low_all),calibrated_wvl=np.array(w_all),wvl_errors=np.array(we_all),save_fig=save_fig,scale_height=H_Rs)
+        fig = plot_transmission_spectrum(d, np.array(rp_all), np.array(rp_up_all), np.array(rp_low_all), calibrated_wvl=np.array(w_all), wvl_errors=np.array(we_all), save_fig=save_fig, scale_height=H_Rs, directory=directory)
         return fig
     else:
         return np.array(rp_all),np.array(rp_up_all),np.array(rp_low_all),np.array(w_all),np.array(we_all),H_Rs
 
 
-def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_wvl=None,wvl_errors=None,bin_width=250,save_fig=False,scale_height=None,model_atmos=None,iib=False,plot_depths=False):
+def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_wvl=None,wvl_errors=None,bin_width=250,save_fig=False,scale_height=None,model_atmos=None,iib=False,
+                               plot_depths=False,directory='./'):
 
     """
     Function that plots the transmission spectrum (Rp/Rs vs wavelength in Angstroms).
@@ -963,14 +1266,14 @@ def plot_transmission_spectrum(rp_array,rp_upper=None,rp_lower=None,calibrated_w
                        length=4,width=1.)
 
     if save_fig:
-        plt.savefig('transmission_spectrum.pdf',bbox_inches='tight')
+        plt.savefig(directory + '/plots/' + 'transmission_spectrum.pdf',bbox_inches='tight')
         plt.close()
     else:
         plt.show()
 
     return fig
 
-def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
+def expected_vs_calculated_ldcs(directory='.',lc_idx=0,save_fig=False,bin_mask=None, best_fit_mode='median'):
 
     """
     Function to plot the expected (LDTk-generated) quadratic limb darkening coefficients vs. the actual fitted limb darkening coefficients.
@@ -978,24 +1281,31 @@ def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
     This function loads the limb darkening coefficients from files within the cwd, so these do not need to be supplied to the function.
 
     Input:
-    save_fig - True/False - save the resulting figure? Default=False
-    bin_mask - a list of wavelength bins to be ignored by the plot. Default=None (no masking of bins)
+    directory  - str, path to files and for saving
+    lc_idx     - int, index of the lightcurve (0 if single lightcurve fit)
+    save_fig   - bool, save the resulting figure? Default=False
+    bin_mask   - list, a list of wavelength bins to be ignored by the plot. Default=None (no masking of bins)
 
     Returns:
     Nothing, it just plots the figure"""
 
-    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt('./LD_coefficients.txt',unpack=True)
+    wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.loadtxt(f'{directory}/LD_coefficients_lc{lc_idx}.txt',unpack=True)
     wvl_error = wvl_error/2
 
     try:
-        best_dict = parseInput('./best_fit_parameters.txt')
+        if best_fit_mode == 'median':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_median.txt')
+        elif best_fit_mode == 'likelihood':
+            best_dict = parseInput(directory + '/tables/' + 'fitted_parameters_max_likelihood.txt')
+        else:
+            raise ValueError("best_fit_mode must be either 'median' or 'likelihood'")
     except:
-        best_dict = parseInput('./best_fit_parameters_GP.txt')
+        best_dict = parseInput(directory + '/tables/' + 'best_fit_parameters_GP.txt')
 
-    model_list = glob.glob('%s/pickled_objects/fitted_lightcurve_model_*.pickle'%directory)
+    model_list = glob.glob(f'{directory}/pickled_objects/fitted_lightcurve_model_lc{lc_idx}*.pickle')
     nbins = len(model_list)
 
-    completed_bins = load_completed_bins(directory,return_index_only=True,mask=bin_mask)
+    completed_bins = load_completed_bins(directory,return_index_only=True,mask=bin_mask,lc_idx=lc_idx)
 
     wvl_centre,wvl_error,ldtk_u1,ldtk_u1_err,ldtk_u2,ldtk_u2_err,ldtk_u3,ldtk_u3_err,ldtk_u4,ldtk_u4_err = np.atleast_1d(wvl_centre)[completed_bins],np.atleast_1d(wvl_error)[completed_bins],\
     np.atleast_1d(ldtk_u1)[completed_bins],np.atleast_1d(ldtk_u1_err)[completed_bins],np.atleast_1d(ldtk_u2)[completed_bins],np.atleast_1d(ldtk_u2_err)[completed_bins],\
@@ -1162,8 +1472,8 @@ def expected_vs_calculated_ldcs(directory='.',save_fig=False,bin_mask=None):
 
 
     if save_fig:
-        plt.savefig('%s/expected_vs_calculated_ldcs.pdf'%directory,bbox_inches='tight')
-        plt.savefig('%s/expected_vs_calculated_ldcs.png'%directory,bbox_inches='tight')
+        plt.savefig(f'{directory}/plots/expected_vs_calculated_ldcs_lc{lc_idx}.pdf',bbox_inches='tight')
+        plt.savefig(f'{directory}/plots/expected_vs_calculated_ldcs_lc{lc_idx}.png',bbox_inches='tight')
         plt.close()
     else:
         plt.show()
@@ -1309,15 +1619,16 @@ def weighted_mean_uneven_errors(rp,rp_up,rp_low,model=1):
     return x_numerator/x_denominator, np.sqrt(e_numerator/(e_denominator**2))
 
 
-def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,return_index_only=False):
+def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,return_index_only=False,lc_idx=0):
     """A function that loads in all model, time, flux, and error files within the current directory, while working out which bins have successfully completed fitting.
 
     Inputs (all optional):
-    directory: the path to the files to load in. The default is the current working directory, which is nearly always correct
-    start_bin: if wanting to ignore the first N bins, define this number. Default=None
-    end_bin: if wanting to ignore the last N bins, define this number. Default=None
-    mask: if wanting to mask certain bins, parse these bin indices as an array here. Default=None
+    directory         - str, the path to the files to load in. The default is the current working directory, which is nearly always correct
+    start_bin         - int, if wanting to ignore the first N bins, define this number. Default=None
+    end_bin           - int, if wanting to ignore the last N bins, define this number. Default=None
+    mask              - int, if wanting to mask certain bins, parse these bin indices as an array here. Default=None
     return_index_only - True/False : if wanting to only return the indices of the completed bins, set this to True. Default=False.
+    lc_idx            - int, index of the lightcurve (0 if single lightcurve fit)
 
     Returns:
     if return_index_only:
@@ -1326,8 +1637,8 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         x,y,e,e_r,m,m_in,w,we,completed_bins,nbins - arrays of time, flux, error, rescaled errors, TransitGPPM models, model input files, wavelength bin centres, wavelength bin widths, the indices of the completed bin fits, the number of bins with completed fits"
     """
 
-    model_files = np.array(sorted(glob.glob('%s/pickled_objects/fitted_lightcurve_model_*.pickle'%directory)))
-
+    model_files = np.array(sorted(glob.glob(f'{directory}/pickled_objects/fitted_lightcurve_model_lc{lc_idx}_*.pickle')))
+    print(len(model_files), "model files found in directory %s/pickled_objects/ for lightcurve index %d"%(directory,lc_idx))
     # determine the completed bins by finding the XXX number in the "_wbXXX" in the file names
     completed_bins = np.array([int(m.split("wb")[-1].split(".")[0]) for m in model_files])
     if return_index_only:
@@ -1335,26 +1646,31 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
     nbins = len(completed_bins)
 
     ### Load in data arrays
-    time_files = np.array(["%s/pickled_objects/Used_time_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    flux_files = np.array(["%s/pickled_objects/Used_flux_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    error_files = np.array(["%s/pickled_objects/Used_error_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
-    model_input_files = np.array(["%s/pickled_objects/Used_model_inputs_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
+    time_files = np.array(["%s/pickled_objects/Used_time_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    flux_files = np.array(["%s/pickled_objects/Used_flux_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    error_files = np.array(["%s/pickled_objects/Used_error_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
+    model_input_files = np.array(["%s/pickled_objects/Used_model_inputs_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins])
 
     # For the error, we preferentially used rescaled errors. Either by reduced chi2 for PM fits or by white noise kernel in GP fits.
-    rescaled_error_files = np.array(["%s/pickled_objects/Used_rescaled_errors_wb%s.pickle"%(directory,str(i).zfill(4)) for i in completed_bins])
+    try:
+        rescaled_error_files = np.array(["%s/pickled_objects/Used_rescaled_errors_lc%s_wb%s.pickle"%(directory,lc_idx,str(i).zfill(4)) for i in completed_bins]) # not yet defined for emcee
+    except:
+        pass 
 
     x = [pickle.load(open(i,'rb')) for i in time_files]
     y = [pickle.load(open(i,'rb')) for i in flux_files]
     e = [pickle.load(open(i,'rb')) for i in error_files]
     m_in = [pickle.load(open(i,'rb')) for i in model_input_files]
+
     try:
         e_r = [pickle.load(open(i,'rb')) for i in rescaled_error_files]
     except: # we might not have used the rescale error option, so we can't load anything in
         e_r = None
 
     ### Load in LD coefficients table for the wavelength centres and widths of the bins
-    w,we = np.loadtxt('./LD_coefficients.txt',unpack=True,usecols=[0,1])
-    w,we = np.atleast_1d(w)[completed_bins-1],np.atleast_1d(we)[completed_bins-1]
+    w,we = np.loadtxt(f'{directory}/LD_coefficients_lc{lc_idx}.txt',unpack=True,usecols=[0,1])
+    w, we = np.atleast_1d(w)[completed_bins-1], np.atleast_1d(we)[completed_bins-1]
+    # w,we = np.atleast_1d(w)[completed_bins],np.atleast_1d(we)[completed_bins]
 
     ### Bin mask
     if mask is not None:
@@ -1377,7 +1693,10 @@ def load_completed_bins(directory=".",start_bin=None,end_bin=None,mask=None,retu
         x = x[start_bin:end_bin]
         y = y[start_bin:end_bin]
         e = e[start_bin:end_bin]
-        e_r = e_r[start_bin:end_bin]
+        try:
+            e_r = e_r[start_bin:end_bin]
+        except:
+            pass
         model_files = model_files[start_bin:end_bin]
         m_in = m_in[start_bin:end_bin]
         w = w[start_bin:end_bin]
@@ -1474,7 +1793,8 @@ def calc_bin_edges_from_centres(bin_centres):
 
 
 
-def make_corner_plot(sample_chains,bin_number,namelist,parameter_modes,save_fig=False,title=None):
+def make_corner_plot(sample_chains, bin_number, namelist, parameter_modes=None,
+                     save_fig=False, title=None, save_folder=None):
     """Use DFM's corner package to make a corner plot of the emcee chains.
 
     Input:
@@ -1491,38 +1811,57 @@ def make_corner_plot(sample_chains,bin_number,namelist,parameter_modes,save_fig=
 
     print('Generating corner plot...')
     ndim = np.shape(sample_chains)[1]
+    
+    if save_folder is not None:
+            save_folder = save_folder + '/plots/'
+    else:
+        save_folder = ''
 
     fig = corner(sample_chains,labels=namelist,quantiles=[0.16, 0.5, 0.84],verbose=False,show_titles=True)
-    overplot_lines(fig, parameter_modes)
+
+    if parameter_modes is not None:
+        overplot_lines(fig, parameter_modes)
 
     if save_fig:
         if title is not None:
             fig.savefig(title)
         else:
-            fig.savefig('cornerplot_wb%s.png'%(str(bin_number).zfill(4)))
+            fig.savefig(save_folder + 'cornerplot_wb%s.png'%(str(bin_number).zfill(4)))
         plt.close()
     else:
         plt.show()
 
 
-def plot_chains(sampler,burn,wavelength_bin,npars,namelist):
+def plot_chains(sampler, burn, wavelength_bin, npars,
+                namelist, discard=0, save_folder=None):
 
-        # save plots of chains
-        if npars > 1:
-            fig,axes = plt.subplots(npars,1,sharex=True,figsize=(8,12))
-            for j in range(npars):
-                axes[j].plot(sampler.chain[:, :, j].T, color="k", alpha=0.4)
-                axes[j].set_ylabel(namelist[j],fontsize=20)
-                axes[j].set_xlabel("step number")
-        else:
-            fig,axes = plt.subplots(1,1,figsize=(6,3))
-            axes.plot(sampler.chain[:, :, 0].T, color="k", alpha=0.4)
-            axes.set_ylabel(namelist[0],fontsize=20)
-            axes.set_xlabel("step number")
+    if save_folder is not None:
+        save_folder = save_folder + '/plots/'
+    else:
+        save_folder = ''
 
-        fig.tight_layout(h_pad=0.0)
-        if burn:
-            fig.savefig('burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
-        else:
-            fig.savefig('prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
-        plt.close()
+    chain = sampler.get_chain(discard=discard)
+
+    # save plots of chains
+    if npars > 1:
+        fig,axes = plt.subplots(npars,1,sharex=True,figsize=(8,12))
+
+        for j in range(npars):
+            axes[j].plot(chain[:, :, j], color='k', alpha=0.4)
+            axes[j].set_ylabel(namelist[j],fontsize=20)
+        
+        axes[j-1].set_xlabel("step number")
+
+    else:
+        fig,axes = plt.subplots(1,1,figsize=(6,3))
+        
+        axes.plot(chain[:, :, 0], color="k", alpha=0.4)
+        axes.set_ylabel(namelist[0],fontsize=20)
+        axes.set_xlabel("step number")
+
+    fig.tight_layout(h_pad=0.0)
+    if burn:
+        fig.savefig(save_folder + 'burn_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+    else:
+        fig.savefig(save_folder + 'prod_chain_wb%s.png'%(str(wavelength_bin+1).zfill(4)))
+    plt.close()

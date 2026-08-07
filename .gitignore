@@ -134,3 +134,4 @@ dmypy.json
 
 *.pyc
 
+_version.py

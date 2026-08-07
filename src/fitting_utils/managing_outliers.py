@@ -84,7 +84,7 @@ def clipping_outliers_with_median_clip(flux, flux_error, time, sigma_clip, show_
         plt.xlabel('Time (MJD)')
         plt.ylabel('Residuals')
 
-        plt.savefig(output_foldername + '/Figures/Outlier_clipping.png', bbox_inches='tight') 
+        plt.savefig(output_foldername + '/plots/Outlier_clipping.png', bbox_inches='tight') 
     
     return clipped_flux, clipped_flux_error, clipped_time, keep_idx
 
