@@ -38,18 +38,56 @@ time_list   = np.array([str(i) for i in input_dict['time_file'].split(',')])
 flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
 error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
 prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
-model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
 
-try:    
-    model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
-except:
-    model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
-
+# This means if we're using GP, we're using GP /only/
 try:
-    poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
-except:
-    poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(',')])
+    GP_model_input_list = np.array([str(i) for i in input_dict['GP_model_input_files'].split(',')])
+    model_input_list = None
+    GP_used = True
 
+except:
+    model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
+
+    try:    
+        model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
+    except:
+        try:
+            model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(',')])
+        except:
+            raise ValueError('Input labels needed!')
+
+    GP_used = False
+
+# Read model input labels
+
+
+# Check if polynomials is being used
+if input_dict['polynomial_orders'] is not None:
+    try:
+        poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(';')])
+        poly_used = True
+    except:
+        try:
+            poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(',')])
+            poly_used = True
+        except:
+            poly_used = False
+else:
+    poly_used = False
+
+# Check if GP is being used
+if GP_used:
+    try:
+        kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(';')])
+        kernel_classes_label_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(';')])
+    except:
+        try:
+            kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(',')])
+            kernel_classes_label_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(',')])
+        except:
+            raise ValueError('GP model input files without kernel classes!')
+
+# Contact
 contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
 contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
 
@@ -172,12 +210,10 @@ def construct_lightcurves(ilightcurve, wb):
     ### Red noise polynomial model parameters
 
     # define the order of each polynomial fitted to each ancillary data set
-    poly_order = poly_order_list[ilightcurve]
-
-    if poly_order is not None:
+    if poly_used:
+        poly_order = poly_order_list[ilightcurve]
         fit_models['systematics_model'].append('polynomial')
         model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')])
-        model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
         
     # determine whether we're using an exponential ramp model or not
     if bool(int(input_dict['exponential_ramp'])):
@@ -187,43 +223,42 @@ def construct_lightcurves(ilightcurve, wb):
     if bool(int(input_dict['step_function'])):
         fit_models['systematics_model'].append('step_function')
 
-    systematics_model_inputs = []
-    for i in model_input_files:
-        model_in = np.atleast_2d(pickle.load(open(i,'rb')))[:,first_integration:last_integration]
-        if model_in.shape[0] == 1:
-            vector = model_in[0]
-            # replace any nans
-            vector[~np.isfinite(vector)] = 1e-10
-            systematics_model_inputs.append(vector)
-        if model_in.shape[0] > 1:
-            vector = model_in[wb]
-            # replace any nans
-            vector[~np.isfinite(vector)] = 1e-10
-            systematics_model_inputs.append(model_in[wb])
+    if model_input_list is not None:
 
-    # Do we want to normalise inputs? Defined as (input - mean(input))/std(input)
-    norm_inputs = bool(int(input_dict['normalise_inputs']))
+        model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
 
-    if norm_inputs:
-        print('standardising model inputs...')
-        systematics_model_inputs = np.array([(i-i.mean())/i.std() for i in systematics_model_inputs])
-    else:
-        systematics_model_inputs = np.array(systematics_model_inputs)
+        systematics_model_inputs = []
+
+        for i in model_input_files:
+            model_in = np.atleast_2d(pickle.load(open(i,'rb')))[:,first_integration:last_integration]
+            if model_in.shape[0] == 1:
+                vector = model_in[0]
+                # replace any nans
+                vector[~np.isfinite(vector)] = 1e-10
+                systematics_model_inputs.append(vector)
+            if model_in.shape[0] > 1:
+                vector = model_in[wb]
+                # replace any nans
+                vector[~np.isfinite(vector)] = 1e-10
+                systematics_model_inputs.append(model_in[wb])
+
+        # Do we want to normalise inputs? Defined as (input - mean(input))/std(input)
+        norm_inputs = bool(int(input_dict['normalise_inputs']))
+
+        if norm_inputs:
+            print('standardising model inputs...')
+            systematics_model_inputs = np.array([(i-i.mean())/i.std() for i in systematics_model_inputs])
+        else:
+            systematics_model_inputs = np.array(systematics_model_inputs)
 
     ### GP controls
-    if input_dict['kernel_classes'] is not None:
-        try:
-            kernel_classes = [i.strip() for i in input_dict['kernel_classes'].split(',')]
-        except:
-            GP_used = False
-
+    if GP_used:
+        kernel_classes = kernel_classes_list[ilightcurve]
         model_inputs['GP_model'] = {}
         model_inputs['GP_model']['kernel_classes'] = kernel_classes
+
         # are we using a white noise kernel?
         model_inputs['GP_model']['white_noise_kernel'] = bool(int(input_dict['white_noise_kernel']))
-        GP_used = True
-    else:
-        GP_used = False
 
     # Define model inputs for transit model
     model_inputs['transit_model'] = {}
@@ -241,7 +276,7 @@ def construct_lightcurves(ilightcurve, wb):
             raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
             
     if GP_used:
-        GP_model_input_files = [i.strip() for i in input_dict['GP_model_input_files'].split(',')]
+        GP_model_input_files = np.loadtxt(GP_model_input_list[ilightcurve],dtype=str,ndmin=1)
         GP_model_inputs = []
         for i in GP_model_input_files:
             model_in = np.atleast_2d(pickle.load(open(i,'rb')))[:,first_integration:last_integration]
@@ -273,7 +308,9 @@ def construct_lightcurves(ilightcurve, wb):
     if np.any(zero_errors):
         flux_error[zero_errors] = np.mean(flux_error)
 
-    systematics_model_inputs = systematics_model_inputs[:,not_nans]
+    if model_input_list is not None:
+        systematics_model_inputs = systematics_model_inputs[:,not_nans]
+
     if GP_used:
         GP_model_inputs = GP_model_inputs[:,not_nans]
 
@@ -287,7 +324,8 @@ def construct_lightcurves(ilightcurve, wb):
         from fitting_utils import managing_outliers
         flux, flux_error, time, keep_idx = managing_outliers.clipping_outliers_with_median_clip(flux, flux_error, time, sigma_clip, show_plots, save_plots, output_foldername)
 
-        systematics_model_inputs = np.array(systematics_model_inputs)[:,keep_idx].reshape(len(systematics_model_inputs),len(np.where(keep_idx == True)[0]))
+        if model_input_list is not None:
+            systematics_model_inputs = np.array(systematics_model_inputs)[:,keep_idx].reshape(len(systematics_model_inputs),len(np.where(keep_idx == True)[0]))
         if GP_used:
             GP_model_inputs = np.array(GP_model_inputs)[:,keep_idx].reshape(len(GP_model_inputs),len(np.where(keep_idx == True)[0]))
         pickle.dump(keep_idx,open(output_foldername + '/pickled_objects/' + 'data_quality_flags_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
@@ -308,8 +346,9 @@ def construct_lightcurves(ilightcurve, wb):
     pickle.dump(time,open(output_foldername + '/pickled_objects/' + 'Used_time_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
     pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_error_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
-    model_inputs['systematic_model']['model_inputs'] = systematics_model_inputs
-    pickle.dump(systematics_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
+    if model_input_list is not None:
+        model_inputs['systematic_model']['model_inputs'] = systematics_model_inputs
+        pickle.dump(systematics_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
     if GP_used:
         model_inputs['GP_model']['model_inputs'] = GP_model_inputs
@@ -321,7 +360,12 @@ def construct_lightcurves(ilightcurve, wb):
     prior_file = str(prior_file_list[ilightcurve])
 
     # initalise light curve model
-    input_labels =  np.array([str(i) for i in model_input_label_list[ilightcurve].split(',')])
+    if model_input_list is not None:
+        input_labels =  np.array([str(i) for i in model_input_label_list[ilightcurve].split(',')])
+
+    if GP_used:
+        input_labels = np.array([str(i) for i in kernel_classes_label_list[ilightcurve].split(',')])
+        
     lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs,input_labels)
     param_dict = lc_class.return_parameter_dict()
     param_list_free = lc_class.return_free_parameter_list()

@@ -84,7 +84,10 @@ class LightcurveModel(object):
         # initialise models
         self.transit_model_package = fit_models['transit_model']
         self.systematics_model_methods = fit_models['systematics_model']
-        self.systematic_model_inputs = model_inputs['systematic_model']
+        try:
+            self.systematic_model_inputs = model_inputs['systematic_model']
+        except:
+            print('Using GP without systematic models')
         self.transit_model_inputs = model_inputs['transit_model']
 
         if self.transit_model_inputs['use_generated_ld_as_prior'] or self.transit_model_inputs['use_generated_ld']:
@@ -114,16 +117,18 @@ class LightcurveModel(object):
             self.transit_model = fsm.FleckModel(self.param_dict, self.param_list_free, self.transit_model_inputs, self.time_array)
 
         from fitting_utils import systematics_model as sm
-        self.systematic_model = sm.SystematicsModel(self.param_dict, self.systematic_model_inputs,
-                                                        self.systematics_model_methods, self.time_array)
 
         try:
-            self.gp_model_inputs = model_inputs['GP_model']
-            from fitting_utils import GPModel as gpm
-            self.GP_used = True
-            self.GP_model = gpm.GPModel(self.param_dict,self.gp_model_inputs, self.time_array, self.flux_array, self.flux_err)
+            self.systematic_model = sm.SystematicsModel(self.param_dict, self.systematic_model_inputs,
+                                                        self.systematics_model_methods, self.time_array)
         except:
-            self.GP_used = False
+            try:
+                self.gp_model_inputs = model_inputs['GP_model']
+                from fitting_utils import GPModel as gpm
+                self.GP_used = True
+                self.GP_model = gpm.GPModel(self.param_dict,self.gp_model_inputs, self.time_array, self.flux_array, self.flux_err)
+            except:
+                self.GP_used = False
 
         self.spot_used = False # add spot model here
         if self.spot_used:
@@ -154,12 +159,13 @@ class LightcurveModel(object):
         transit_calc = self.transit_model.calc(time)
         model_calc = np.array(transit_calc)
 
-        sys_calc = self.systematic_model.calc(time, decompose=decompose)
-        model_calc *= sys_calc
-
-        if self.GP_used and with_GP:
-            GP_calc = self.GP_model.calc(time, model_calc, decompose=decompose)
-            model_calc *= GP_calc
+        try:
+            sys_calc = self.systematic_model.calc(time, decompose=decompose)
+            model_calc *= sys_calc
+        except:
+            if self.GP_used and with_GP:
+                GP_calc = self.GP_model.calc(time, model_calc, decompose=decompose)
+                model_calc *= GP_calc
 
         return model_calc
 
@@ -170,10 +176,13 @@ class LightcurveModel(object):
             self.param_dict[self.param_list_free[i]].currVal = theta[i]
 
         self.transit_model.update_model(self.param_dict)
-        self.systematic_model.update_model(self.param_dict)
 
-        if self.GP_used:
-            self.GP_model.update_model(self.param_dict)
+        try:
+            self.systematic_model.update_model(self.param_dict)
+        except:
+            if self.GP_used:
+                self.GP_model.update_model(self.param_dict)
+
         return
 
 
