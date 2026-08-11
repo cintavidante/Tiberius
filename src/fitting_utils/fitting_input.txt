@@ -59,11 +59,11 @@ median_clip = 1      # define whether you want to clip the outliers using a runn
 renorm_flux = 0 # do we want to renormalise the flux to give an out of transit median of unity? Set to 1 (on) or 0 (off).
 
 ## FOR PARAMETRIC MODELLING
-model_input_files = model1_input.txt,model2_input.txt # paths that point to an arbitrary number of pickled arrays of detrending inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
-model_input_labels = airmass,sky,time;airmass,time
+model_input_files =  # paths that point to an arbitrary number of pickled arrays of detrending inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
+model_input_labels = 
 normalise_inputs = 0	# do we want to normalise the ancillary data? This is done through (input - mean(input))/std(input).  Set to 1 (on) or 0 (off).
 
-polynomial_orders = 1,2,1;1,1		 	# What order polynomials are being used to model the systematic model inputs? Can be left blank if not using a polynomial. Note the inputs are those defined in the above 'model_input_files' and so must have the same length. e.g. for 3 model input files, you could set polynomial_orders to 0,1,2 (which would be 0th order/ignored first model input, 1st order poly to second input, 2nd order poly to 3rd input)
+polynomial_orders = 		 	# What order polynomials are being used to model the systematic model inputs? Can be left blank if not using a polynomial. Note the inputs are those defined in the above 'model_input_files' and so must have the same length. e.g. for 3 model input files, you could set polynomial_orders to 0,1,2 (which would be 0th order/ignored first model input, 1st order poly to second input, 2nd order poly to 3rd input)
 
 exponential_ramp = 0 # do you want to use an exponential ramp in your fitting? If yes, set this to an integer >= 1, where the number sets the number of exponentials to use. If not wanting to use an exponential ramp, keep this as 0.
 
@@ -71,10 +71,10 @@ step_function = 0 # do you want to fit a step function (1) or not (0)? This can 
 
 
 ## FOR GP MODELLING
-GP_model_input_files =  # paths that point to an arbitrary number of pickled arrays of GP inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
+GP_model_input_files = GP_model1_input.txt,GP_model2_input.txt # paths that point to an arbitrary number of pickled arrays of GP inputs. Each path needs to be separated by a comma, e.g.: "time.pickle,background.pickle,x.pickle,..."
 normalise_GP_inputs = 1	# do we want to normalise the ancillary data? This is done through (input - mean(input))/std(input).  Set to 1 (on) or 0 (off).
-
-kernel_classes = 				# A list of kernel classes that we want to use, e.g. "ExpSquared,Matern32,..." If we don't want to use a GP (and only polynomials), leave this blank. This needs to be as long as the number of 'model_input_files'
+kernel_classes = ExpSquared;ExpSquared 				# A list of kernel classes that we want to use, e.g. "ExpSquared,Matern32,..." If we don't want to use a GP (and only polynomials), leave this blank. This needs to be as long as the number of 'model_input_files'
+kernel_classes_labels = airmass,sky,time;airmass,time
 white_noise_kernel = 1			# Use white noise kernel (1) or not (0)
 typeII_maximum_likelihood = 0	# run typeII maximum likelihood? i.e. hold GP hyperparameters fixed to optimized values and run MCMC over mean model parameters. Set to 1 (on) or 0 (off).
 
@@ -97,7 +97,7 @@ optimise_model = 	1		# optimise the model parameters using a Nelder-Mead algorit
 
 ## DYNESTY PARAMETERS
 nlive_points_pdim = 50  # will be multiplied by the number of parameters, so the 'real' live points = nLive_pdim * nDims
-precision_crit = 1e-3  # ratio between prior and posterior space where the nested sampling converges
+precision_crit = 150  # ratio between prior and posterior space where the nested sampling converges
 
 
 ### Plotting and Saving
@@ -105,7 +105,7 @@ show_plots = 0 # Do you want to plot intermediate plots of the fit outputs? Set 
 save_plots = 1 # Do you want to plot intermediate plots of the fit outputs? Set to 1 (on) or 0 (off).
 rebin_data = 	# can choose to bin the data for purposes of plotting. set this number to number of bins desired. Can be left blank.
 
-output_foldername = fitting_01
+output_foldername = test_run_wlc_GP
 # PLANET PARAMETERS, NEEDED TO CALCULATE SCALE HEIGHT FOR TRANSMISSION SPECTRUM IN plot_output.py
 
 rp = 1.611 # planet's radius in Jupiter radii
