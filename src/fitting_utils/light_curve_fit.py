@@ -401,6 +401,7 @@ if sampling_method == 'emcee':
 elif sampling_method == 'dynesty':
     sampling_arguments['nlive_pdim'] = int(input_dict['nlive_points_pdim'])
     sampling_arguments['precision_crit'] = float(input_dict['precision_crit'])
+    sampling_arguments['dynesty_nthreads'] = int(input_dict['dynesty_nthreads'])
 
 # else:
 #     raise SystemExit

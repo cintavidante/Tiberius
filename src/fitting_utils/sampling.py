@@ -12,7 +12,9 @@ import sys
 import pickle
 
 from scipy import optimize,stats
+
 import matplotlib.pyplot as plt
+import multiprocessing as mp
 
 # from fitting_utils import parametric_fitting_functions as pf
 from fitting_utils import plotting_utils as pu
@@ -116,12 +118,25 @@ class Sampling(object):
 
         live_points = self.sampling_arguments['nlive_pdim']
         precision_criterion = self.sampling_arguments['precision_crit']
-        sampler = dynesty.NestedSampler(self.loglikelihood, 
-                                        self.prior_setup, 
-                                        self.nDims,
-                                        nlive=live_points*self.nDims, 
-                                        bootstrap=0) #,sample='rslice')
-        sampler.run_nested(dlogz=precision_criterion, print_progress=True)
+        n_threads = self.sampling_arguments['dynesty_nthreads']
+
+        if n_threads > 1:
+            with mp.Pool(processes=n_threads) as pool:
+                sampler = dynesty.NestedSampler(self.loglikelihood, 
+                                                self.prior_setup, 
+                                                self.nDims,
+                                                pool=pool,
+                                                nlive=live_points*self.nDims, 
+                                                bootstrap=0) #,sample='rslice')
+                sampler.run_nested(dlogz=precision_criterion, print_progress=True)
+        else:
+            sampler = dynesty.NestedSampler(self.loglikelihood, 
+                                            self.prior_setup, 
+                                            self.nDims,
+                                            nlive=live_points*self.nDims, 
+                                            bootstrap=0) #,sample='rslice')
+            sampler.run_nested(dlogz=precision_criterion, print_progress=True)
+
         self.sampler_results = sampler.results
 
         # Get equal weight sampels

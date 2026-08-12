@@ -98,7 +98,7 @@ optimise_model = 	1		# optimise the model parameters using a Nelder-Mead algorit
 ## DYNESTY PARAMETERS
 nlive_points_pdim = 50  # will be multiplied by the number of parameters, so the 'real' live points = nLive_pdim * nDims
 precision_crit = 150  # ratio between prior and posterior space where the nested sampling converges
-
+dynesty_nthreads = 1
 
 ### Plotting and Saving
 show_plots = 0 # Do you want to plot intermediate plots of the fit outputs? Set to 1 (on) or 0 (off).
