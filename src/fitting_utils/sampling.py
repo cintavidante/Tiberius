@@ -96,8 +96,22 @@ class Sampling(object):
             noise = lc.return_flux_err()
 
             if lc.GP_used:
-                model_calc = lc.calc(with_GP=False)
-                logL = lc.GP_model.lnlike(model_calc,noise)
+                # try:
+                #     model_calc = lc.calc()
+                #     # if error_var:
+                #     #     return -np.inf
+                #     # else:
+                #     logL = lc.GP_model.lnlike(model_calc,noise)
+                # except np.linalg.LinAlgError as e:
+                #     return -np.inf
+                # model_calc = lc.calc()
+                transit_lc = lc.transit_model.calc(lc.time_array)
+                transit_lc = np.array(transit_lc)
+                logL = lc.GP_model.lnlike(transit_lc,noise)
+                # transit_model = lc.transit_model.calc(lc.time_array)
+                # gp = lc.GP_model.construct_gp(compute=True, flux_err=noise)
+                # residuals = lc.flux_array - np.array(transit_model)
+                # logL = gp.log_likelihood(residuals)
             else:
                 residuals  = lc.calc_residuals()
                 
@@ -126,6 +140,7 @@ class Sampling(object):
                                                 self.prior_setup, 
                                                 self.nDims,
                                                 pool=pool,
+                                                queue_size=5,
                                                 nlive=live_points*self.nDims, 
                                                 bootstrap=0) #,sample='rslice')
                 sampler.run_nested(dlogz=precision_criterion, print_progress=True)

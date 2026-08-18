@@ -14,7 +14,6 @@ from fitting_utils import LightcurveModel as lc
 from fitting_utils import sampling as s
 from fitting_utils import plotting_utils as pu
 
-
 parser = argparse.ArgumentParser(description='Run fit to a single light curve that is either a wavelength-binned or white light curve. This makes use of the TransitModelGPPM class, which fits the red noise as a GP + parametric model.')
 parser.add_argument('wavelength_bin', help="which wavelength bin are we running the fit to? This is indexed from 0. If running fit to the white light curve, this must be given as '0'",type=int)
 parser.add_argument('-dbp',"--determine_best_polynomials", help="Use this option to loop over all combination of polynomial input vectors and orders to determine the best fitting polynomials via a Nelder-Mead. This prevents an MCMC from running. Set this number to the maximum polynomial order you want to consider. e.g. 3 = cubic polys",default=0,type=int)
@@ -42,24 +41,20 @@ prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(
 # This means if we're using GP, we're using GP /only/
 try:
     GP_model_input_list = np.array([str(i) for i in input_dict['GP_model_input_files'].split(',')])
-    model_input_list = None
     GP_used = True
-
+    sys_model_used = False
 except:
     model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
-
     try:    
         model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
+        sys_model_used = True
     except:
         try:
             model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(',')])
+            sys_model_used = True
         except:
             raise ValueError('Input labels needed!')
-
     GP_used = False
-
-# Read model input labels
-
 
 # Check if polynomials is being used
 if input_dict['polynomial_orders'] is not None:
@@ -78,11 +73,11 @@ else:
 # Check if GP is being used
 if GP_used:
     try:
-        kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(';')])
+        kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes'].split(';')])
         kernel_classes_label_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(';')])
     except:
         try:
-            kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(',')])
+            kernel_classes_list = np.array([str(i) for i in input_dict['kernel_classes'].split(',')])
             kernel_classes_label_list = np.array([str(i) for i in input_dict['kernel_classes_labels'].split(',')])
         except:
             raise ValueError('GP model input files without kernel classes!')
@@ -202,31 +197,39 @@ def construct_lightcurves(ilightcurve, wb):
 
     fit_models = {}
     fit_models['transit_model'] = str(input_dict['transit_model'])
-    fit_models['systematics_model'] = []
 
     model_inputs = {}
+
     model_inputs['systematic_model'] = {}
+    model_inputs['systematic_model']['using'] = False
 
-    ### Red noise polynomial model parameters
+    model_inputs['GP_model'] = {}
+    model_inputs['GP_model']['using'] = False
 
-    # define the order of each polynomial fitted to each ancillary data set
-    if poly_used:
-        poly_order = poly_order_list[ilightcurve]
-        fit_models['systematics_model'].append('polynomial')
-        model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')])
+    # We use systematic models
+    if sys_model_used:
+
+        fit_models['systematics_model'] = []
         
-    # determine whether we're using an exponential ramp model or not
-    if bool(int(input_dict['exponential_ramp'])):
-        fit_models['systematics_model'].append('exponential_ramp')
+        # define the order of each polynomial fitted to each ancillary data set
+        if poly_used:
+            poly_order = poly_order_list[ilightcurve]
+            fit_models['systematics_model'].append('polynomial')
+            model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')])
+            
+        # determine whether we're using an exponential ramp model or not
+        if bool(int(input_dict['exponential_ramp'])):
+            fit_models['systematics_model'].append('exponential_ramp')
 
-    # determine whether we're using a step function or not
-    if bool(int(input_dict['step_function'])):
-        fit_models['systematics_model'].append('step_function')
+        # determine whether we're using a step function or not
+        if bool(int(input_dict['step_function'])):
+            fit_models['systematics_model'].append('step_function')
 
-    if model_input_list is not None:
-
-        model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
-
+        try:
+            model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
+        except:
+            raise ValueError('Systematic models input cannot be accessed!')
+        
         systematics_model_inputs = []
 
         for i in model_input_files:
@@ -254,7 +257,6 @@ def construct_lightcurves(ilightcurve, wb):
     ### GP controls
     if GP_used:
         kernel_classes = kernel_classes_list[ilightcurve]
-        model_inputs['GP_model'] = {}
         model_inputs['GP_model']['kernel_classes'] = kernel_classes
 
         # are we using a white noise kernel?
@@ -308,7 +310,7 @@ def construct_lightcurves(ilightcurve, wb):
     if np.any(zero_errors):
         flux_error[zero_errors] = np.mean(flux_error)
 
-    if model_input_list is not None:
+    if sys_model_used:
         systematics_model_inputs = systematics_model_inputs[:,not_nans]
 
     if GP_used:
@@ -324,7 +326,7 @@ def construct_lightcurves(ilightcurve, wb):
         from fitting_utils import managing_outliers
         flux, flux_error, time, keep_idx = managing_outliers.clipping_outliers_with_median_clip(flux, flux_error, time, sigma_clip, show_plots, save_plots, output_foldername)
 
-        if model_input_list is not None:
+        if sys_model_used:
             systematics_model_inputs = np.array(systematics_model_inputs)[:,keep_idx].reshape(len(systematics_model_inputs),len(np.where(keep_idx == True)[0]))
         if GP_used:
             GP_model_inputs = np.array(GP_model_inputs)[:,keep_idx].reshape(len(GP_model_inputs),len(np.where(keep_idx == True)[0]))
@@ -333,7 +335,7 @@ def construct_lightcurves(ilightcurve, wb):
     ### for GP optimisation and variance limits
     contact1 = int(contact1_list[ilightcurve]) - first_integration
     contact4 = int(contact4_list[ilightcurve]) - first_integration
- 
+
     ## renormalise flux to out-of-transit median?
     if bool(int(input_dict['renorm_flux'])):
         print("re-normalising flux array...")
@@ -346,11 +348,13 @@ def construct_lightcurves(ilightcurve, wb):
     pickle.dump(time,open(output_foldername + '/pickled_objects/' + 'Used_time_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
     pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_error_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
-    if model_input_list is not None:
+    if sys_model_used:
+        model_inputs['systematic_model']['using'] = True
         model_inputs['systematic_model']['model_inputs'] = systematics_model_inputs
         pickle.dump(systematics_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
 
     if GP_used:
+        model_inputs['GP_model']['using'] = True
         model_inputs['GP_model']['model_inputs'] = GP_model_inputs
         pickle.dump(GP_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_GP_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
     
@@ -360,16 +364,27 @@ def construct_lightcurves(ilightcurve, wb):
     prior_file = str(prior_file_list[ilightcurve])
 
     # initalise light curve model
-    if model_input_list is not None:
+    if sys_model_used:
         input_labels =  np.array([str(i) for i in model_input_label_list[ilightcurve].split(',')])
 
     if GP_used:
         input_labels = np.array([str(i) for i in kernel_classes_label_list[ilightcurve].split(',')])
         
-    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs,input_labels)
+    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs)
     param_dict = lc_class.return_parameter_dict()
     param_list_free = lc_class.return_free_parameter_list()
     nDims = len(param_list_free)
+
+    print('initial parameters')
+
+    for key in param_dict:
+        print(key)
+        try:
+            print(param_dict[key].currVal)
+        except:
+            print(param_dict[key])
+    # print(param_dict)
+    print('------')
 
     print(f"Light curve {ilightcurve+1} constructed.\n")
     return lc_class
@@ -377,6 +392,7 @@ def construct_lightcurves(ilightcurve, wb):
 lightcurve_objects = []
 for i in range(nlc):
     lightcurve_objects.append(construct_lightcurves(i,wb))
+    print('--------------- ## ---------------')
 
 # sampling controls
 sampling_method = str(input_dict['sampling_method'])
@@ -438,22 +454,22 @@ elif sampling_method == 'LM':
         # pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
 sampling.save_results(wb, verbose=True)
-sampling.write_fit_diagnostics(wb)
+# sampling.write_fit_diagnostics(wb)
 
 for ilc,lc in enumerate(fitted_lightcurve_list):
     pickle.dump(lc,open(output_foldername + '/pickled_objects/' + f'fitted_lightcurve_model_lc{ilc}_wb{str(wb+1).zfill(4)}.pickle','wb'))
 
-pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
-                            save_folder=output_foldername, sigma=1)
+# # pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
+# #                             save_folder=output_foldername, sigma=1)
 
-for i in range(nlc):
-    _time = lightcurve_objects[i].time_array
-    _flux = lightcurve_objects[i].flux_array
-    _flux_error = lightcurve_objects[i].flux_err
-    fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True,
-                               save_folder=output_foldername)
-    print(fitted_lightcurve_list[i].transit_model.batman_params.u)
+# # for i in range(nlc):
+# #     _time = lightcurve_objects[i].time_array
+# #     _flux = lightcurve_objects[i].flux_array
+# #     _flux_error = lightcurve_objects[i].flux_err
+# #     fig = pu.plot_single_model(fitted_lightcurve_list[i],_time,_flux,_flux_error,i,rebin_data=rebin_data,save_fig=True,wavelength_bin=wb,deconstruct=True,
+# #                             save_folder=output_foldername)
+# #     print(fitted_lightcurve_list[i].transit_model.batman_params.u)
 
-if white_light_fit:
-    for ilc in range(nlc):
-        _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc)
+# # if white_light_fit:
+# #     for ilc in range(nlc):
+# #         _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc)
