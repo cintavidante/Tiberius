@@ -100,7 +100,7 @@ class Sampling(object):
                 residuals  = lc.calc_residuals()
                 
                 N = len(noise)
-                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(noise)) - np.sum(residuals**2 / (2*noise**2))
+                logL = -N/2. * np.log(2*np.pi) - np.nansum(np.log(noise)) - np.nansum(residuals**2 / (2*noise**2))
             
             logL_total += logL
         
@@ -459,11 +459,7 @@ class Sampling(object):
         total_chisq = 0.0
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu) / lc.flux_err
-            else:
-                resids = lc.calc_residuals() / lc.flux_err
+            resids = lc.calc_residuals() / lc.flux_err
 
             chisq_dict[f'lc{ilc}'] = np.sum(resids**2)
             total_chisq += np.sum(resids**2)
@@ -506,11 +502,7 @@ class Sampling(object):
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu)
-            else:
-                resids = lc.calc_residuals()
+            resids = lc.calc_residuals()
             
             rms_dict[f'lc{ilc}'] = np.sqrt(np.mean(resids**2))
 
