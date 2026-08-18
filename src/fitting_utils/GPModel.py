@@ -5,6 +5,7 @@ from fitting_utils.LightcurveModel import Param
 import george
 from george import kernels
 
+
 class GPModel(object):
     """
     Encapsulates exponential ramps, polynomial red-noise trends,
@@ -39,7 +40,6 @@ class GPModel(object):
 
 
         self.wn_kernel = self.GP_model_inputs['white_noise_kernel']
-            
 
         self.gp = self.construct_gp()
 
