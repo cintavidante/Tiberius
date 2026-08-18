@@ -405,7 +405,7 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
             except:
                 try:
                     tc = model.param_dict['t0']
-                    model_name = False
+                    model_name = 'transit'
                 except:
                     pass
 
@@ -446,9 +446,9 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
 
     if gp:
         if deconstruct:
-            mu,std,mu_components = model.calc_gp_component(time,flux,error,deconstruct_gp=True)
+            mu,std,mu_components = model.calc_gp_model(time,decompose=True)
         else:
-            mu,std = model.calc_gp_component(time,flux,error,deconstruct_gp=False)
+            mu, std = model.calc_gp_model(time,decompose=False)
         residuals = flux - model_y - mu
     else:
         residuals = flux - model_y

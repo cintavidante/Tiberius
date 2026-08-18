@@ -96,27 +96,13 @@ class Sampling(object):
             noise = lc.return_flux_err()
 
             if lc.GP_used:
-                # try:
-                #     model_calc = lc.calc()
-                #     # if error_var:
-                #     #     return -np.inf
-                #     # else:
-                #     logL = lc.GP_model.lnlike(model_calc,noise)
-                # except np.linalg.LinAlgError as e:
-                #     return -np.inf
-                # model_calc = lc.calc()
-                transit_lc = lc.transit_model.calc(lc.time_array)
-                transit_lc = np.array(transit_lc)
-                logL = lc.GP_model.lnlike(transit_lc,noise)
-                # transit_model = lc.transit_model.calc(lc.time_array)
-                # gp = lc.GP_model.construct_gp(compute=True, flux_err=noise)
-                # residuals = lc.flux_array - np.array(transit_model)
-                # logL = gp.log_likelihood(residuals)
+                model_calc = lc.calc(with_GP=False)
+                logL = lc.GP_model.lnlike(model_calc,noise)
             else:
                 residuals  = lc.calc_residuals()
                 
                 N = len(noise)
-                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(noise)) - np.sum(residuals**2 / (2*noise**2))
+                logL = -N/2. * np.log(2*np.pi) - np.nansum(np.log(noise)) - np.nansum(residuals**2 / (2*noise**2))
             
             logL_total += logL
         
@@ -132,26 +118,12 @@ class Sampling(object):
 
         live_points = self.sampling_arguments['nlive_pdim']
         precision_criterion = self.sampling_arguments['precision_crit']
-        n_threads = self.sampling_arguments['dynesty_nthreads']
-
-        if n_threads > 1:
-            with mp.Pool(processes=n_threads) as pool:
-                sampler = dynesty.NestedSampler(self.loglikelihood, 
-                                                self.prior_setup, 
-                                                self.nDims,
-                                                pool=pool,
-                                                queue_size=5,
-                                                nlive=live_points*self.nDims, 
-                                                bootstrap=0) #,sample='rslice')
-                sampler.run_nested(dlogz=precision_criterion, print_progress=True)
-        else:
-            sampler = dynesty.NestedSampler(self.loglikelihood, 
-                                            self.prior_setup, 
-                                            self.nDims,
-                                            nlive=live_points*self.nDims, 
-                                            bootstrap=0) #,sample='rslice')
-            sampler.run_nested(dlogz=precision_criterion, print_progress=True)
-
+        sampler = dynesty.NestedSampler(self.loglikelihood, 
+                                        self.prior_setup, 
+                                        self.nDims,
+                                        nlive=live_points*self.nDims, 
+                                        bootstrap=0) #,sample='rslice')
+        sampler.run_nested(dlogz=precision_criterion, print_progress=True)
         self.sampler_results = sampler.results
 
         # Get equal weight sampels
@@ -489,11 +461,7 @@ class Sampling(object):
         total_chisq = 0.0
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu) / lc.flux_err
-            else:
-                resids = lc.calc_residuals() / lc.flux_err
+            resids = lc.calc_residuals() / lc.flux_err
 
             chisq_dict[f'lc{ilc}'] = np.sum(resids**2)
             total_chisq += np.sum(resids**2)
@@ -536,11 +504,7 @@ class Sampling(object):
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu)
-            else:
-                resids = lc.calc_residuals()
+            resids = lc.calc_residuals()
             
             rms_dict[f'lc{ilc}'] = np.sqrt(np.mean(resids**2))
 

@@ -5,6 +5,7 @@ from fitting_utils.LightcurveModel import Param
 import george
 from george import kernels
 
+
 class GPModel(object):
     """
     Encapsulates exponential ramps, polynomial red-noise trends,
@@ -29,23 +30,18 @@ class GPModel(object):
         self.param_dict = param_dict
         self.GP_model_inputs = GP_model_inputs
         self.GP_kernel_inputs = GP_model_inputs['model_inputs']
-        self.GP_kernel_inputs = np.column_stack(self.GP_kernel_inputs)
         self.flux_error = flux_error
         self.flux = flux
         self.GP_used = True
         
         self.time = time_array
-        self.kernel_classes = np.array([str(i) for i in self.GP_model_inputs['kernel_classes'].split(',')])
-        self.gp_ndim = len(self.kernel_classes)
+        self.kernel_classes = self.GP_model_inputs['kernel_classes']
+        self.gp_ndim = len([c for c in self.kernel_classes if c is not None])
+
 
         self.wn_kernel = self.GP_model_inputs['white_noise_kernel']
 
         self.gp = self.construct_gp()
-        print('kernel classes')
-        print(self.kernel_classes)
-        print('kernel inputs')
-        print(self.GP_kernel_inputs)
-        print('-----')
 
 
     def construct_gp(self,split=False,compute=False,flux_err=None):
@@ -69,14 +65,14 @@ class GPModel(object):
         else:
             A2 = self.param_dict['A'] # log of the amplitude
 
+
         for i in range(self.gp_ndim):
 
             # lniL = log-inverse-length-scale
             if type(self.param_dict['lniL_%d'%(i+1)]) is Param:
                 lniL = self.param_dict['lniL_%d'%(i+1)].currVal
             else:
-                lniL = self.param_dict['L%d'%(i+1)]
-
+                lniL = self.param_dict['lniL_%d'%(i+1)]
             L2 = ( 1./np.exp( lniL ) )**2
 
             if self.kernel_classes[i] == 'Matern32':
@@ -114,9 +110,9 @@ class GPModel(object):
                 err = flux_err
 
             if self.gp_ndim > 1:
-                gp.compute(self.GP_kernel_inputs,yerr=err)
+                gp.compute(self.GP_kernel_inputs.T,yerr=err)
             else:
-                gp.compute(self.GP_kernel_inputs,yerr=err)
+                gp.compute(self.GP_kernel_inputs[0],yerr=err)
 
         if split:
             return gp,gp_split
@@ -132,7 +128,7 @@ class GPModel(object):
         return
 
 
-    def calc(self,model_calc,time=None,flux=None,flux_err=None,kernel_inputs=None,decompose=False):
+    def calc(self,model_calc,time=None,flux=None,flux_err=None,kernel_inputs=None,deconstruct_gp=False):
         """The function that generates the systematics (red) noise model using the GP.
 
         Inputs:
@@ -162,41 +158,33 @@ class GPModel(object):
         else:
             gp_model_inputs = kernel_inputs
 
-        if decompose:
+        if deconstruct_gp:
             gp,kernels = self.construct_gp(split=True,compute=True,flux_err=flux_err)
-            mu_components = [gp.predict(flux-mean_function,gp_model_inputs, return_cov=False, kernel=k) for k in kernels]
+            mu_components = [gp.predict(flux-mean_function,gp_model_inputs.T, return_cov=False, kernel=k) for k in kernels]
 
         else:
             gp = self.construct_gp(compute=True,flux_err=flux_err)
 
-        predictions = gp.predict(flux-mean_function,gp_model_inputs)
+        predictions = gp.predict(flux-mean_function,gp_model_inputs.T)
 
         mu = predictions[0]
         cov = predictions[1]
-        var = np.diag(cov)
-        std = np.sqrt(var)
+        std = np.sqrt(np.diag(cov))
 
-        # if not np.all(np.isfinite(var)) or np.any(var < 0):
-        #     error_var = True
-        #     std = None
-        # else:
-        #     error_var = False
-        #     std = np.sqrt(var)
-
-        if decompose:
+        if deconstruct_gp:
             return mu,std,mu_components
         else:
-            return mu
+            return mu,std
 
-    def lnlike(self, transit_model, flux_err):
+    def lnlike(self, model_calc,flux_err):
         """The log likelihood
     
         Returns:
         gp.lnlikelihood - the log likelihood of the GP evaulated by george
         """
         if self.gp_ndim > 1:
-            self.gp.compute(self.GP_kernel_inputs,flux_err)
+            self.gp.compute(self.GP_kernel_inputs.T,flux_err)
         else:
-            self.gp.compute(self.GP_kernel_inputs,flux_err)
+            self.gp.compute(self.GP_kernel_inputs[0],flux_err)
 
-        return self.gp.lnlikelihood(self.flux-transit_model,quiet=True)
+        return self.gp.lnlikelihood(self.flux-model_calc,quiet=True)
