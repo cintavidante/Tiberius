@@ -118,12 +118,13 @@ class LightcurveModel(object):
         self.systematic_model = sm.SystematicsModel(self.param_dict, self.systematic_model_inputs,
                                                         self.systematics_model_methods, self.time_array)
 
-        try:
+        
+        if 'GP_model' in model_inputs:
             self.gp_model_inputs = model_inputs['GP_model']
             from fitting_utils import GPModel as gpm
             self.GP_used = True
             self.GP_model = gpm.GPModel(self.param_dict,self.gp_model_inputs, self.time_array, self.flux_array, self.flux_err)
-        except:
+        else:
             self.GP_used = False
 
         self.spot_used = False # add spot model here
@@ -138,7 +139,7 @@ class LightcurveModel(object):
     def return_parameter_dict(self):
         return self.param_dict
 
-    def calc(self,time=None,decompose=False,with_GP=True):
+    def calc(self,time=None, with_GP=True):
 
         """Calculates and returns the evaluated Mandel & Agol transit model, using catwoman.
 
@@ -155,15 +156,20 @@ class LightcurveModel(object):
         transit_calc = self.transit_model.calc(time)
         model_calc = np.array(transit_calc)
 
-        sys_calc = self.systematic_model.calc(time, decompose=decompose)
+        sys_calc = self.systematic_model.calc(time)
         model_calc *= sys_calc
 
         if self.GP_used and with_GP:
-            GP_calc = self.GP_model.calc(time, model_calc, decompose=decompose)
-            model_calc *= GP_calc
+            mu, std = self.GP_model.calc(time, model_calc)
+            model_calc *= mu
 
         return model_calc
 
+    def calc_gp_model(self,time=None,decompose=False):
+        if time is None:
+            time = self.time_array
+        model_calc = self.calc(time, with_GP=False)
+        return self.GP_model.calc(time, model_calc, deconstruct_gp=decompose)
     
     def update_model(self,theta):
 
