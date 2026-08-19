@@ -1,6 +1,7 @@
 #### Author of this code: James Kirk
 #### Contact: jameskirk@live.co.uk
 
+import copy
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
@@ -427,7 +428,9 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
     hours = mjd2hours(time,tc)
 
     # calculate M&A transit model
-    model_y = model.calc(time,systematics_model_inputs)
+    # what is this supposed to be? why is systematics_model_inputs here?
+    # model_y = model.calc(time, systematics_model_inputs)
+    model_y = model.calc(time, with_GP=False)
     oot = 1
 
     if poly:# and not gp:
@@ -448,7 +451,7 @@ def plot_single_model(model,time,flux,error,lc_idx,rebin_data=None,save_fig=Fals
         if deconstruct:
             mu,std,mu_components = model.calc_gp_model(time,decompose=True)
         else:
-            mu, std = model.calc_gp_model(time,decompose=False)
+            mu, std = model.calc_gp_model(time, decompose=False)
         residuals = flux - model_y - mu
     else:
         residuals = flux - model_y
@@ -588,33 +591,39 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
     Plot joint fit in one image.
     """
 
-    label_size = 25 # used to be 8
+    label_size = 25 
     mpl.rcParams['xtick.labelsize'] = label_size 
     mpl.rcParams['ytick.labelsize'] = label_size 
 
     cmap = plt.cm.inferno
 
-    fig, ax = plt.subplots(3, nlc, figsize=[nlc*20,15], gridspec_kw={'height_ratios': [3, 1, 1]})
+    fig, ax = plt.subplots(3, nlc, figsize=[nlc*20,20], gridspec_kw={'height_ratios': [3, 1, 1]})
 
-    for i in range(nlc):
+    arrs = [samclass.best_fit_values_median, samclass.arr_low1, samclass.arr_high1, samclass.arr_low2, samclass.arr_high2]
+
+    for ilc in range(nlc):
+
+        lc_object = lightcurve_objects[ilc]
 
         # Call arrays
-        time = lightcurve_objects[i].time_array
-        flux = lightcurve_objects[i].flux_array
-        error = lightcurve_objects[i].flux_err
-        input_labels = lightcurve_objects[i].input_labels
+        time = lc_object.time_array
+        flux = lc_object.flux_array
+        error = lc_object.flux_err
+        input_labels = lc_object.input_labels
 
-        models = samclass.get_arrays_for_sigma_plotting()
+        if lc_object.GP_kernel_input_labels is not None:
+            kernel_labels = lc_object.GP_kernel_input_labels
+            print(kernel_labels)
+        else:
+            kernel_labels = None
 
         if sigma == 2:
-            lcz = models
+            arrs = arrs
         elif sigma == 1:
-            lcz = models[:3]
+            arrs = arrs[:3]
         else:
             raise ValueError("sigma must be 1 or 2")
 
-        lcs = [lc[i] for lc in lcz]
-        
         hourz = []
         fluxs = []
         errors = []
@@ -625,15 +634,35 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
         polys = []
         resz = []
 
-        for im, model in enumerate(lcs):
+        for il, sig_arr in enumerate(arrs):
+
+            if il > 0:
+                model = copy.deepcopy(lc_object)
+                if len(arrs) > 1:
+                    lc_theta, _ = samclass.joint_fitter.map_theta(sig_arr, ilc, samclass.param_list_free)
+                else:
+                    lc_theta = sig_arr[0]
+                model.update_model(lc_theta)
+            else:
+                model = lc_object
 
             try:
-                tc = model.t0.currVal
+                tc = model.param_dict['t_secondary'].currVal
+                model_name = 'eclipse'
             except:
                 try:
-                    tc = model.param_dict['t0'].currVal
+                    tc = model.param_dict['t_secondary']
+                    model_name = 'eclipse'
                 except:
-                    tc = model.param_dict['t0']
+                    try:
+                        tc = model.param_dict['t0'].currVal
+                        model_name = 'transit'
+                    except:
+                        try:
+                            tc = model.param_dict['t0']
+                            model_name = 'transit'
+                        except:
+                            pass
             
             gp = model.GP_used
 
@@ -647,7 +676,7 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
             hours = mjd2hours(time, tc)
 
             # calculate M&A transit model
-            model_y = model.calc(time,systematics_model_inputs)
+            model_y = model.calc(time, with_GP=False)
             modelys.append(model_y)
             oot = 1
 
@@ -670,11 +699,11 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
 
             if gp:
                 if deconstruct:
-                    mu,std,mu_components = model.calc_gp_component(time,flux,error,deconstruct_gp=True)
+                    mu,std,mu_components = model.calc_gp_model(time,decompose=True)
                     mus.append(mu)
-                    mucs.append(mucs)
+                    mucs.append(mu_components)
                 else:
-                    mu,std = model.calc_gp_component(time,flux,error,deconstruct_gp=False)
+                    mu, std = model.calc_gp_model(time,decompose=False)
                     mus.append(mu)
                 residuals = flux - model_y - mu
             else:
@@ -685,7 +714,7 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
                 _,yr,_ = rebin(np.linspace(time[0],time[-1],rebin_data),time,residuals,e=error)
                 hp = mjd2hours(xp,tc)
 
-                if im == 0:
+                if il == 0:
                     org_hours = hours
                     org_flux = flux
                     org_error = error
@@ -701,51 +730,58 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
         # Mid value is in the middle of the list of models, which is the model with the best fit to the data
 
         if rebin_data is not None:
-            ax[0, i].errorbar(org_hours, org_flux, org_error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
-            ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
+            ax[0, ilc].errorbar(org_hours, org_flux, org_error, fmt='.',capsize=0,color='gray',ecolor='gray',alpha=0.25,zorder=0)
+            ax[0, ilc].errorbar(hourz[0], fluxs[0], errors[0], fmt='o', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,mew=2,lw=1.5)
         else:
             try:
-                ax[0, i].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, elinewidth=2, color=cmap(0.1))
+                ax[0, ilc].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, elinewidth=2, color=cmap(0.1))
             except:
                 ax[0].errorbar(hourz[0], fluxs[0], errors[0], fmt='.', ms=10, color=cmap(0.1))
 
 
         if gp:
             try:
-                ax[0, i].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
-                ax[0, i].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
+                ax[0, ilc].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=3)
+                ax[0, ilc].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
                 if sigma == 2:
-                    ax[0, i].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
-                ax[0, i].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
-                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+                    ax[0, ilc].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.2))
+                ax[0, ilc].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.9, label='GP', linewidth=3)
+                ax[0, ilc].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model', linewidth=3)
             except:
-                ax[0].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=1.5)
+                ax[0].plot(hourz[0], mus[0]+modelys[0], color=cmap(0.3), zorder=10, label='GP & transit model', linewidth=3)
                 ax[0].fill_between(hourz[0], mus[1]+modelys[1], mus[2]+modelys[2], alpha=0.3, color=cmap(0.3))
                 if sigma == 2:
-                    ax[0].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.1))
-                ax[0].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.8, ls='--', label='GP', linewidth=1.5)
-                ax[0].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.8, ls='--',zorder=9,label='Transit model', linewidth=1.5)
+                    ax[0].fill_between(hourz[0], mus[3]+modelys[3], mus[4]+modelys[4], alpha=0.1, color=cmap(0.2))
+                ax[0].plot(hourz[0], mus[0]+1, color=cmap(0.7), alpha=0.9, label='GP', linewidth=3)
+                ax[0].plot(hourz[0], modelys[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model', linewidth=3)
 
             if len(mu_components) > 1:
                 alpha = 0.5
             else:
                 alpha = 1
+                
             for j,m in enumerate(mucs[0]):
+
+                if kernel_labels is not None:
+                    label = kernel_labels[j]
+                else:
+                    label = 'kernel %d'%(j+1)
+
                 try:
-                    ax[1, i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                    ax[1, ilc].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=label,alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
                 except:
-                    ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label='kernel %d'%(j+1),alpha=alpha,lw=1.5,color=cmap(0.5+(0.15*j)))
+                    ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=label,alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
 
                 
         if poly and not gp or exp and not gp:
 
             try:
-                ax[0, i].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model', lw=3)
-                ax[0, i].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
+                ax[0, ilc].plot(hourz[0], modelys[0], color=cmap(0.3), alpha=0.8, zorder=10,label='Systematics & transit model', lw=3)
+                ax[0, ilc].fill_between(hourz[0], modelys[2], modelys[1], alpha=0.3, color=cmap(0.3))
                 if sigma == 2:
                     ax[0, i].fill_between(hourz[0], modelys[3], modelys[4], alpha=0.1, color=cmap(0.2))
-                ax[0, i].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model', lw=3)
-                ax[0, i].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=3)
+                ax[0, ilc].plot(hourz[0], oots[0], color=cmap(0.7), alpha=0.9, label='Systematics model', lw=3)
+                ax[0, ilc].plot(hourz[0], modelys[0]/oots[0], color=cmap(0.5), alpha=0.9, ls='--',zorder=9,label='Transit model',lw=3)
             except:
                 ax[0].plot(hourz[0], modelys[1], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
                 ax[0].plot(hourz[0], modelys[2], color='red', alpha=0.8, zorder=10,label='Systematics & transit model',lw=1.75)
@@ -761,31 +797,31 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
                 alpha=0.7
                 for j,m in enumerate(polys[0]):
                     try:
-                        ax[1,i].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
+                        ax[1,ilc].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
                     except:
-                        ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=2,color=cmap(0.5+(0.15*j)))
+                        ax[1].plot(hourz[0],(m*1e6)-(m*1e6).mean(),label=input_labels[j],alpha=alpha,lw=3,color=cmap(0.5+(0.15*j)))
 
             if exp:
                 try:
-                    ax[1, i].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
+                    ax[1, ilc].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
                 except:
                     ax[1].plot(hourz[0],(exp_ramp*1e6)-(exp_ramp*1e6).mean(),label='exponential ramp',alpha=1,lw=1.5)
 
             if step:
                 try:
-                    ax[1, i].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
+                    ax[1, ilc].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
                 except:
                     ax[1].plot(hourz[0],(step_func*1e6)-(step_func*1e6).mean(),label='step function',alpha=1,lw=1.5)
         
         if rebin_data is not None:
-            ax[2, i].errorbar(org_hours, 1e6*org_residuals, 1e6*org_error, fmt='.', ms=5, color=cmap(0.3))
-            ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
+            ax[2, ilc].errorbar(org_hours, 1e6*org_residuals, 1e6*org_error, fmt='.', ms=5, color=cmap(0.3))
+            ax[2, ilc].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', capsize=2,color='k',ecolor='k',mfc='white',ms=4,alpha=1,lw=2,mew=2)
         else:
             try:
-                ax[2, i].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
-                ax[2, i].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
+                ax[2, ilc].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
+                ax[2, ilc].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
                 if sigma == 2:
-                    ax[2, i].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
+                    ax[2, ilc].fill_between(hourz[0], resz[3]*1e6, resz[4]*1e6, alpha=0.1, color=cmap(0.2))
             except:
                 ax[2].errorbar(hourz[0], resz[0]*1e6, errors[0]*1e6, fmt='.', ms=10, color=cmap(0.1))
                 ax[2].fill_between(hourz[0], resz[1]*1e6, resz[2]*1e6, alpha=0.3, color=cmap(0.3))
@@ -795,17 +831,17 @@ def plot_multiple_lightcurve(samclass, nlc, lightcurve_objects, sigma=2,
 
         
         try:
-            ax[2, i].axhline(0, ls='--', color=cmap(0.3), linewidth=2)
+            ax[2, ilc].axhline(0, ls='--', color=cmap(0.3), linewidth=2)
 
             ax[0, 0].legend(loc='lower right', fontsize=20)
             ax[0, 1].legend(loc='lower left', fontsize=20)
             ax[1, 0].legend(loc='lower left', fontsize=20)
             ax[1, 1].legend(fontsize=20)
 
-            ax[0, i].set_ylabel('Normalized flux', fontsize=25)
-            ax[1, i].set_ylabel('RN component [ppm]',fontsize=18)
-            ax[2, i].set_ylabel('Residuals [ppm]',fontsize=18)
-            ax[2, i].set_xlabel('Time from mid-transit [hours]',fontsize=25)
+            ax[0, ilc].set_ylabel('Normalized flux', fontsize=25)
+            ax[1, ilc].set_ylabel('RN components\n[ppm]',fontsize=25)
+            ax[2, ilc].set_ylabel('Residuals\n[ppm]',fontsize=25)
+            ax[2, ilc].set_xlabel('Time from mid-transit [hours]',fontsize=25)
         except:
             ax[2].axhline(0, ls='--', color=cmap(0.3), linewidth=1)
 
