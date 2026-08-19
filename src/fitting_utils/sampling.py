@@ -1027,7 +1027,7 @@ class Sampling(object):
         return np.array(median),np.array(upper),np.array(lower),np.array(mode)
 
 
-    def update_prior_file(self, input_prior_file, wb, ilc, best_fit_median=True):
+    def update_prior_file(self, input_prior_file, wb, ilc, best_fit_median=True, save_folder=None):
         """
         Create a new prior file where values are replaced by best-fit medians and uncertainties.
 
@@ -1071,6 +1071,9 @@ class Sampling(object):
         # Output file
         # -------------------------------------------
         new_prior_file = input_prior_file.replace(".txt", "_fitted_lc%s_wb%s.txt"%(str(ilc), str(wb+1).zfill(4)))
+
+        if save_folder is not None:
+            new_prior_file = f'{save_folder}/{new_prior_file}'
 
         # Parameters that must be fixed
         force_fix = {"t0", "a", "inc", "per"}

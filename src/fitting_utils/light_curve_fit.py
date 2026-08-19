@@ -450,5 +450,5 @@ if nlc > 1:
 
 if white_light_fit:
     for ilc in range(nlc):
-        _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc)
+        _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc, save_folder=output_foldername)
 
