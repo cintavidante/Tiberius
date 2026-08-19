@@ -151,7 +151,7 @@ class SystematicsModel:
         model_components = {}
 
         if self.poly_used:
-            poly_model = self.red_noise_poly(time,sys_model_inputs,deconstruct_polys=False)
+            poly_model = self.red_noise_poly(time,sys_model_inputs,deconstruct_polys=decompose)
             combined_model *= poly_model
             model_components['poly_model'] = poly_model
 

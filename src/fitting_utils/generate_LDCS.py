@@ -50,8 +50,8 @@ else:
 
 ld_law = str(input_dict['ld_law'])
 
-wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
-wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
+wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(';')])
+wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(';')])
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 
@@ -204,30 +204,31 @@ for ilightcurve in range(nlc):
 
         nbins = len(wvl_centre)
 
-        coeffs = []
+        coeffs = []; errors = []
 
         for i in range(nbins):
             # Start and end of wavelength interval [angstroms].
             wavelength_range = [wvl_centre[i]-wvl_error[i]/2,wvl_centre[i]+wvl_error[i]/2]
 
             if ld_law == "linear":
-                c = sld.compute_linear_ld_coeffs(wavelength_range, instrument_mode,
+                c, err = sld.compute_linear_ld_coeffs(wavelength_range, instrument_mode,
                                                   custom_wavelengths=wvs,
-                                                  custom_throughput=throughput)
+                                                  custom_throughput=throughput, return_sigmas=True)
 
             if ld_law == "quadratic":
-                c = sld.compute_quadratic_ld_coeffs(wavelength_range, instrument_mode,
+                c, err = sld.compute_quadratic_ld_coeffs(wavelength_range, instrument_mode,
                                                   custom_wavelengths=wvs,
-                                                  custom_throughput=throughput)
+                                                  custom_throughput=throughput, return_sigmas=True)
 
             if ld_law == "nonlinear":
-                c = sld.compute_4_parameter_non_linear_ld_coeffs(wavelength_range, instrument_mode,
+                c, err = sld.compute_4_parameter_non_linear_ld_coeffs(wavelength_range, instrument_mode,
                                                   custom_wavelengths=wvs,
-                                                  custom_throughput=throughput)
+                                                  custom_throughput=throughput, return_sigmas=True)
 
             coeffs.append(c)
+            errors.append(err)
 
-        return np.array(coeffs),np.zeros_like(coeffs)
+        return np.array(coeffs),np.array(errors)
 
 
     if LDCs_package == 'LDTk':

@@ -12,7 +12,9 @@ import sys
 import pickle
 
 from scipy import optimize,stats
+
 import matplotlib.pyplot as plt
+import multiprocessing as mp
 
 # from fitting_utils import parametric_fitting_functions as pf
 from fitting_utils import plotting_utils as pu
@@ -100,7 +102,7 @@ class Sampling(object):
                 residuals  = lc.calc_residuals()
                 
                 N = len(noise)
-                logL = -N/2. * np.log(2*np.pi) - np.sum(np.log(noise)) - np.sum(residuals**2 / (2*noise**2))
+                logL = -N/2. * np.log(2*np.pi) - np.nansum(np.log(noise)) - np.nansum(residuals**2 / (2*noise**2))
             
             logL_total += logL
         
@@ -459,11 +461,7 @@ class Sampling(object):
         total_chisq = 0.0
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu) / lc.flux_err
-            else:
-                resids = lc.calc_residuals() / lc.flux_err
+            resids = lc.calc_residuals() / lc.flux_err
 
             chisq_dict[f'lc{ilc}'] = np.sum(resids**2)
             total_chisq += np.sum(resids**2)
@@ -506,11 +504,7 @@ class Sampling(object):
                     lc.update_model(lc_theta)
 
         for ilc, lc in enumerate(self.lightcurve_list):
-            if lc.GP_used:
-                mu, _ = lc.calc_gp_component()
-                resids = (lc.calc_residuals() - mu)
-            else:
-                resids = lc.calc_residuals()
+            resids = lc.calc_residuals()
             
             rms_dict[f'lc{ilc}'] = np.sqrt(np.mean(resids**2))
 
@@ -916,27 +910,33 @@ class Sampling(object):
                 new_tab_bf.write('#------------------ \n')
                 new_tab_bf.close()
 
+        self.arr_low2 = arr_low2 
+        self.arr_low1 = arr_low1
+        self.arr_median = arr_median
+        self.arr_high1 = arr_high1
+        self.arr_high2 = arr_high2
+
         return arr_low2, arr_low1, arr_median, arr_high1, arr_high2
 
-    def get_arrays_for_sigma_plotting(self):
+    # def get_arrays_for_sigma_plotting(self):
 
-        low_2 = copy.deepcopy(self.lightcurve_list)
-        low_1 = copy.deepcopy(self.lightcurve_list)
-        high_1 = copy.deepcopy(self.lightcurve_list)
-        high_2 = copy.deepcopy(self.lightcurve_list)
+    #     low_2 = copy.deepcopy(self.lightcurve_list)
+    #     low_1 = copy.deepcopy(self.lightcurve_list)
+    #     high_1 = copy.deepcopy(self.lightcurve_list)
+    #     high_2 = copy.deepcopy(self.lightcurve_list)
 
-        list_lcs = [low_2, low_1, high_1, high_2]
-        arrs = [self.arr_low2, self.arr_low1, self.arr_high1, self.arr_high2]
+    #     list_lcs = [low_2, low_1, high_1, high_2]
+    #     arrs = [self.arr_low2, self.arr_low1, self.arr_high1, self.arr_high2]
 
-        for i, lc_array in enumerate(list_lcs):
-            for ilc, lc in enumerate(lc_array):
-                if len(list_lcs)>1:
-                    lc_theta, _ = self.joint_fitter.map_theta(arrs[i],ilc,self.param_list_free)
-                else:
-                    lc_theta = arrs[i]
-                lc.update_model(lc_theta)
+    #     for i, lc_array in enumerate(list_lcs):
+    #         for ilc, lc in enumerate(lc_array):
+    #             if len(list_lcs)>1:
+    #                 lc_theta, _ = self.joint_fitter.map_theta(arrs[i],ilc,self.param_list_free)
+    #             else:
+    #                 lc_theta = arrs[i]
+    #             lc.update_model(lc_theta)
 
-        return [self.lightcurve_list, low_1, high_1, low_2, high_2]
+    #     return [self.lightcurve_list, low_1, high_1, low_2, high_2]
 
     def recover_quartiles_single(self,samples,bin_number,verbose=True,save_result=False,burn=False):
         """

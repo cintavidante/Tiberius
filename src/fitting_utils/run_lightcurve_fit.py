@@ -29,10 +29,10 @@ print('Running light_curve_fit.py..')
 for i in range(starting_bin,stopping_bin):
 	os.system("python %s/light_curve_fit.py %d"%(Tiberius_path,i))
 
-print('Running plot_output.py to generate plots and tables...')
-os.system("python %s/plot_output.py -s -st -cp"%Tiberius_path)
+# print('Running plot_output.py to generate plots and tables...')
+# os.system("python %s/plot_output.py -s -st -cp"%Tiberius_path)
 
-os.system(f"cp *.txt {input_dict['output_foldername']}")
+# os.system(f"cp *.txt {input_dict['output_foldername']}")
 # # # # # os.system("python %s/model_table_generator.py"%Tiberius_path)
 
 # exclude_keywords = ["fitting_input", "LD_coefficients", "model", "prior"]

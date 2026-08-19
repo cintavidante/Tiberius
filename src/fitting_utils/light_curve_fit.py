@@ -14,7 +14,6 @@ from fitting_utils import LightcurveModel as lc
 from fitting_utils import sampling as s
 from fitting_utils import plotting_utils as pu
 
-
 parser = argparse.ArgumentParser(description='Run fit to a single light curve that is either a wavelength-binned or white light curve. This makes use of the TransitModelGPPM class, which fits the red noise as a GP + parametric model.')
 parser.add_argument('wavelength_bin', help="which wavelength bin are we running the fit to? This is indexed from 0. If running fit to the white light curve, this must be given as '0'",type=int)
 parser.add_argument('-dbp',"--determine_best_polynomials", help="Use this option to loop over all combination of polynomial input vectors and orders to determine the best fitting polynomials via a Nelder-Mead. This prevents an MCMC from running. Set this number to the maximum polynomial order you want to consider. e.g. 3 = cubic polys",default=0,type=int)
@@ -25,8 +24,8 @@ args = parser.parse_args()
 
 input_dict = parseInput('fitting_input.txt')
 
-wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
-wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
+wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(';')])
+wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(';')])
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 
@@ -34,11 +33,14 @@ cwd = os.getcwd()
 output_foldername = os.path.join(cwd, str(input_dict['output_foldername']))
 
 # check all files provided 
-time_list   = np.array([str(i) for i in input_dict['time_file'].split(',')])
-flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(',')])
-error_list  = np.array([str(i) for i in input_dict['error_file'].split(',')])
-prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(',')])
-model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
+time_list   = np.array([str(i) for i in input_dict['time_file'].split(';')])
+flux_list   = np.array([str(i) for i in input_dict['flux_file'].split(';')])
+error_list  = np.array([str(i) for i in input_dict['error_file'].split(';')])
+prior_file_list  = np.array([str(i) for i in input_dict['prior_filename'].split(';')])
+try:
+    model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(';')])
+except:
+    model_input_list = np.array([str(i) for i in input_dict['model_input_files'].split(',')])
 
 try:    
     model_input_label_list = np.array([str(i) for i in input_dict['model_input_labels'].split(';')])
@@ -50,8 +52,25 @@ try:
 except:
     poly_order_list = np.array([str(i) for i in input_dict['polynomial_orders'].split(',')])
 
-contact1_list = np.array([str(i) for i in input_dict['contact1'].split(',')])
-contact4_list = np.array([str(i) for i in input_dict['contact4'].split(',')])
+if input_dict['kernel_classes']:
+    try:
+        GP_kernel_list = np.array([str(i) for i in input_dict['kernel_classes'].split(';')])
+    except:
+        GP_kernel_list = np.array([str(i) for i in input_dict['kernel_classes'].split(',')])
+
+    try:
+        GP_model_input_list = np.array([str(i) for i in input_dict['GP_model_input_files'].split(';')])
+    except:
+        GP_model_input_list = np.array([str(i) for i in input_dict['GP_model_input_files'].split(',')])
+
+    try:
+        GP_kernel_input_label_list = np.array([str(i) for i in input_dict['kernel_input_labels'].split(';')])
+    except:
+        GP_kernel_input_label_list = np.array([str(i) for i in input_dict['kernel_input_labels'].split(';')])
+
+
+contact1_list = np.array([str(i) for i in input_dict['contact1'].split(';')])
+contact4_list = np.array([str(i) for i in input_dict['contact4'].split(';')])
 
 if len(flux_list)==len(error_list)==len(time_list)==len(wvl_bin_full_width_list)==nlc:
     print(f"Fitting {nlc} light curves jointly..")
@@ -165,10 +184,10 @@ def construct_lightcurves(ilightcurve, wb):
     fit_models = {}
     fit_models['transit_model'] = str(input_dict['transit_model'])
     fit_models['systematics_model'] = []
-
+    
     model_inputs = {}
     model_inputs['systematic_model'] = {}
-
+    
     ### Red noise polynomial model parameters
 
     # define the order of each polynomial fitted to each ancillary data set
@@ -176,9 +195,13 @@ def construct_lightcurves(ilightcurve, wb):
 
     if poly_order is not None:
         fit_models['systematics_model'].append('polynomial')
-        model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')])
-        model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
-        
+        model_inputs['systematic_model']['polynomial_orders'] = np.array([int(i) for i in poly_order.split(',')]) 
+
+        if '.pickle' in model_input_list[ilightcurve]:
+            model_input_files = np.array([i.strip() for i in model_input_list[ilightcurve].split(',')])
+        else:
+            model_input_files = np.loadtxt(model_input_list[ilightcurve],dtype=str,ndmin=1)
+    
     # determine whether we're using an exponential ramp model or not
     if bool(int(input_dict['exponential_ramp'])):
         fit_models['systematics_model'].append('exponential_ramp')
@@ -211,19 +234,24 @@ def construct_lightcurves(ilightcurve, wb):
         systematics_model_inputs = np.array(systematics_model_inputs)
 
     ### GP controls
-    if input_dict['kernel_classes'] is not None:
-        try:
-            kernel_classes = [i.strip() for i in input_dict['kernel_classes'].split(',')]
-        except:
-            GP_used = False
-
-        model_inputs['GP_model'] = {}
-        model_inputs['GP_model']['kernel_classes'] = kernel_classes
-        # are we using a white noise kernel?
-        model_inputs['GP_model']['white_noise_kernel'] = bool(int(input_dict['white_noise_kernel']))
+    # define the kernel classes for the GP for each data set 
+    try:
+        GP_kernels = GP_kernel_list[ilightcurve]
         GP_used = True
-    else:
+    except:
         GP_used = False
+
+
+    if GP_used:
+        model_inputs['GP_model'] = {}
+        model_inputs['GP_model']['kernel_classes'] = [i.strip() for i in GP_kernels.split(',')]
+        # are we using a white noise kernel?
+        if ';' in input_dict['white_noise_kernel']:
+            model_inputs['GP_model']['white_noise_kernel']  = bool(int(input_dict['white_noise_kernel'].split(';')[ilightcurve]))
+            print(bool(int(input_dict['white_noise_kernel'].split(';')[ilightcurve])))
+        else:
+            model_inputs['GP_model']['white_noise_kernel']  = bool(int(input_dict['white_noise_kernel']))
+        
 
     # Define model inputs for transit model
     model_inputs['transit_model'] = {}
@@ -239,9 +267,14 @@ def construct_lightcurves(ilightcurve, wb):
             model_inputs['transit_model']['LDCs_generated'] = ldcs_table[wb]
         except:
             raise SystemError('Need to first generate limb darkening values before using the generated limb-darkening values.')
-            
+
+    # GP model inputs 
     if GP_used:
-        GP_model_input_files = [i.strip() for i in input_dict['GP_model_input_files'].split(',')]
+        if '.pickle' in GP_model_input_list[ilightcurve]:
+            GP_model_input_files = np.array([i.strip() for i in GP_model_input_list[ilightcurve].split(',')])
+        else:
+            GP_model_input_files = np.loadtxt(GP_model_input_list[ilightcurve],dtype=str,ndmin=1)
+
         GP_model_inputs = []
         for i in GP_model_input_files:
             model_in = np.atleast_2d(pickle.load(open(i,'rb')))[:,first_integration:last_integration]
@@ -255,14 +288,12 @@ def construct_lightcurves(ilightcurve, wb):
                 # replace any nans
                 vector[~np.isfinite(vector)] = 1e-10
                 GP_model_inputs.append(model_in[wb])
-
         norm_GP_inputs = bool(int(input_dict['normalise_GP_inputs']))
         if norm_GP_inputs:
             print('standardising GP model inputs...')
             GP_model_inputs = np.array([(i-i.mean())/i.std() for i in GP_model_inputs])
         else:
             GP_model_inputs = np.array(GP_model_inputs)
-
 
     ## Remove any nans and zeroes from the error array
     not_nans = np.isfinite(flux)*np.isfinite(flux_error)
@@ -274,6 +305,7 @@ def construct_lightcurves(ilightcurve, wb):
         flux_error[zero_errors] = np.mean(flux_error)
 
     systematics_model_inputs = systematics_model_inputs[:,not_nans]
+
     if GP_used:
         GP_model_inputs = GP_model_inputs[:,not_nans]
 
@@ -295,7 +327,7 @@ def construct_lightcurves(ilightcurve, wb):
     ### for GP optimisation and variance limits
     contact1 = int(contact1_list[ilightcurve]) - first_integration
     contact4 = int(contact4_list[ilightcurve]) - first_integration
- 
+
     ## renormalise flux to out-of-transit median?
     if bool(int(input_dict['renorm_flux'])):
         print("re-normalising flux array...")
@@ -315,14 +347,16 @@ def construct_lightcurves(ilightcurve, wb):
         model_inputs['GP_model']['model_inputs'] = GP_model_inputs
         pickle.dump(GP_model_inputs,open(output_foldername + '/pickled_objects/' + 'Used_GP_model_inputs_lc{}_wb{}.pickle'.format(str(ilightcurve),str(wb+1).zfill(4)),'wb'))
     
-    if str(input_dict["LDCs_package"]) == "exotic-ld" and model_inputs['transit_model']['use_generated_ld_as_prior']:
-        raise SystemError("Can't have use_generated_ld_as_prior = 1 if LDCs_package == exotic-ld, since ExoTiC-LD will not generate uncertainties.")
-
     prior_file = str(prior_file_list[ilightcurve])
 
-    # initalise light curve model
     input_labels =  np.array([str(i) for i in model_input_label_list[ilightcurve].split(',')])
-    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs,input_labels)
+
+    if GP_used:
+        GP_kernel_input_labels = np.array([str(i) for i in GP_kernel_input_label_list[ilightcurve].split(',')])
+    else:
+        GP_kernel_input_labels = None
+
+    lc_class   = lc.LightcurveModel(flux,flux_error,time,prior_file,fit_models,model_inputs,input_labels,GP_kernel_input_labels)
     param_dict = lc_class.return_parameter_dict()
     param_list_free = lc_class.return_free_parameter_list()
     nDims = len(param_list_free)
@@ -333,6 +367,7 @@ def construct_lightcurves(ilightcurve, wb):
 lightcurve_objects = []
 for i in range(nlc):
     lightcurve_objects.append(construct_lightcurves(i,wb))
+    print('--------------- ## ---------------')
 
 # sampling controls
 sampling_method = str(input_dict['sampling_method'])
@@ -392,14 +427,13 @@ elif sampling_method == 'LM':
         print("reduced Chi2 following error rescaling = %.2f"%(rchi2_rescaled['total']))
         # pickle.dump(flux_error,open(output_foldername + '/pickled_objects/' + 'Used_rescaled_errors_wb%s.pickle'%(str(wb+1).zfill(4)),'wb'))
 
-sampling.save_results(wb, verbose=True)
-sampling.write_fit_diagnostics(wb)
+pickle.dump(sampling,open(output_foldername + '/pickled_objects/' + f'sampling_class_wb{str(wb+1).zfill(4)}.pickle','wb'))
 
 for ilc,lc in enumerate(fitted_lightcurve_list):
     pickle.dump(lc,open(output_foldername + '/pickled_objects/' + f'fitted_lightcurve_model_lc{ilc}_wb{str(wb+1).zfill(4)}.pickle','wb'))
 
-pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
-                            save_folder=output_foldername, sigma=1)
+sampling.write_fit_diagnostics(wb)
+sampling.save_results(wb, verbose=True)
 
 for i in range(nlc):
     _time = lightcurve_objects[i].time_array
@@ -409,6 +443,12 @@ for i in range(nlc):
                                save_folder=output_foldername)
     print(fitted_lightcurve_list[i].transit_model.batman_params.u)
 
+# This has to be after sampling.save_results because that's where the sigma arrays are generated 
+if nlc > 1:
+    pu.plot_multiple_lightcurve(sampling, nlc, lightcurve_objects, rebin_data=rebin_data, save_fig=True, wavelength_bin=wb,
+                            save_folder=output_foldername, sigma=1)
+
 if white_light_fit:
     for ilc in range(nlc):
         _ = sampling.update_prior_file(prior_file_list[ilc], wb, ilc)
+

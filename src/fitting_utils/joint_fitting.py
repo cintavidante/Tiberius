@@ -112,4 +112,5 @@ class JointFitter(object):
                 idx = global_param_list.index(global_name)
             
             lc_theta.append(global_theta[idx])
+            
         return lc_theta,lc.param_list_free
