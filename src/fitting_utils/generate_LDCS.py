@@ -50,8 +50,8 @@ else:
 
 ld_law = str(input_dict['ld_law'])
 
-wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(',')])
-wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(',')])
+wvl_centres_list = np.array([i for i in input_dict['wvl_centres'].split(';')])
+wvl_bin_full_width_list = np.array([i for i in input_dict['wvl_bin_full_width'].split(';')])
 
 nlc = len(wvl_centres_list) # nlc >1 for joint fitting
 

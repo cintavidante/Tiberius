@@ -910,27 +910,33 @@ class Sampling(object):
                 new_tab_bf.write('#------------------ \n')
                 new_tab_bf.close()
 
+        self.arr_low2 = arr_low2 
+        self.arr_low1 = arr_low1
+        self.arr_median = arr_median
+        self.arr_high1 = arr_high1
+        self.arr_high2 = arr_high2
+
         return arr_low2, arr_low1, arr_median, arr_high1, arr_high2
 
-    def get_arrays_for_sigma_plotting(self):
+    # def get_arrays_for_sigma_plotting(self):
 
-        low_2 = copy.deepcopy(self.lightcurve_list)
-        low_1 = copy.deepcopy(self.lightcurve_list)
-        high_1 = copy.deepcopy(self.lightcurve_list)
-        high_2 = copy.deepcopy(self.lightcurve_list)
+    #     low_2 = copy.deepcopy(self.lightcurve_list)
+    #     low_1 = copy.deepcopy(self.lightcurve_list)
+    #     high_1 = copy.deepcopy(self.lightcurve_list)
+    #     high_2 = copy.deepcopy(self.lightcurve_list)
 
-        list_lcs = [low_2, low_1, high_1, high_2]
-        arrs = [self.arr_low2, self.arr_low1, self.arr_high1, self.arr_high2]
+    #     list_lcs = [low_2, low_1, high_1, high_2]
+    #     arrs = [self.arr_low2, self.arr_low1, self.arr_high1, self.arr_high2]
 
-        for i, lc_array in enumerate(list_lcs):
-            for ilc, lc in enumerate(lc_array):
-                if len(list_lcs)>1:
-                    lc_theta, _ = self.joint_fitter.map_theta(arrs[i],ilc,self.param_list_free)
-                else:
-                    lc_theta = arrs[i]
-                lc.update_model(lc_theta)
+    #     for i, lc_array in enumerate(list_lcs):
+    #         for ilc, lc in enumerate(lc_array):
+    #             if len(list_lcs)>1:
+    #                 lc_theta, _ = self.joint_fitter.map_theta(arrs[i],ilc,self.param_list_free)
+    #             else:
+    #                 lc_theta = arrs[i]
+    #             lc.update_model(lc_theta)
 
-        return [self.lightcurve_list, low_1, high_1, low_2, high_2]
+    #     return [self.lightcurve_list, low_1, high_1, low_2, high_2]
 
     def recover_quartiles_single(self,samples,bin_number,verbose=True,save_result=False,burn=False):
         """

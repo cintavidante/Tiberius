@@ -18,9 +18,9 @@ class Param(object):
         self.currVal  = startVal
 
 
-
 class LightcurveModel(object):
-    def __init__(self,flux,flux_error,time_array,prior_file,fit_models,model_inputs):
+    def __init__(self,flux,flux_error,time_array,prior_file,fit_models,model_inputs,
+                 model_input_labels,GP_kernel_input_labels=None):
 
         """
 
@@ -42,6 +42,8 @@ class LightcurveModel(object):
         self.flux_array = flux
         self.flux_err = flux_error
         self.time_array = time_array
+        self.input_labels = model_input_labels
+        self.GP_kernel_input_labels = GP_kernel_input_labels
 
         file = pd.read_csv(prior_file, sep='\s+', comment='#')
         currVals = list(file['value'])
@@ -83,10 +85,8 @@ class LightcurveModel(object):
 
         # initialise models
         self.transit_model_package = fit_models['transit_model']
-
         self.systematics_model_methods = fit_models['systematics_model']
         self.systematic_model_inputs = model_inputs['systematic_model']
-
         self.transit_model_inputs = model_inputs['transit_model']
 
         if self.transit_model_inputs['use_generated_ld_as_prior'] or self.transit_model_inputs['use_generated_ld']:
@@ -117,16 +117,40 @@ class LightcurveModel(object):
             self.transit_model = fsm.FleckModel(self.param_dict, self.param_list_free, self.transit_model_inputs, self.time_array)
 
         from fitting_utils import systematics_model as sm
-
-        if self.sys_model_used:
-            self.systematic_model = sm.SystematicsModel(self.param_dict, self.systematic_model_inputs,
+        self.systematic_model = sm.SystematicsModel(self.param_dict, self.systematic_model_inputs,
                                                         self.systematics_model_methods, self.time_array)
 
         
         if 'GP_model' in model_inputs:
             self.gp_model_inputs = model_inputs['GP_model']
             from fitting_utils import GPModel as gpm
+            self.GP_used = True
             self.GP_model = gpm.GPModel(self.param_dict,self.gp_model_inputs, self.time_array, self.flux_array, self.flux_err)
+
+            # transit_calc = self.transit_model.calc(self.time_array)
+            # model_calc = np.array(transit_calc)
+    
+            # sys_calc = self.systematic_model.calc(self.time_array)
+            # model_calc *= sys_calc
+
+            # print('systematic model')
+            # print(model_calc)
+
+            # mu, std = self.GP_model.calc(model_calc)
+
+            # print('GP model')
+            # print(mu)
+
+            # print('----')
+            # print('from self.calc()')
+
+            # plt.figure(figsize=[10, 5])
+            # plt.errorbar(self.time_array, self.flux_array, yerr=self.flux_err, fmt='o')
+            # plt.plot(self.time_array, model_calc)
+            # plt.plot(self.time_array, model_calc+mu)
+            # plt.plot(self.time_array, self.calc())
+            # plt.show()
+            
         else:
             self.GP_used = False
 
@@ -142,7 +166,7 @@ class LightcurveModel(object):
     def return_parameter_dict(self):
         return self.param_dict
 
-    def calc(self,time=None, with_GP=True):
+    def calc(self, time=None, with_GP=True):
 
         """Calculates and returns the evaluated Mandel & Agol transit model, using catwoman.
 
@@ -163,16 +187,24 @@ class LightcurveModel(object):
         model_calc *= sys_calc
 
         if self.GP_used and with_GP:
-            mu, std = self.GP_model.calc(time, model_calc)
-            model_calc *= mu
+            mu, std = self.GP_model.calc(model_calc, time)
+            model_calc += mu
 
         return model_calc
 
-    def calc_gp_model(self,time=None,decompose=False):
+    def calc_gp_model(self,time=None,flux=None,flux_err=None,decompose=False):
+
         if time is None:
-            time = self.time_array
+            time = self.time
+        if flux is None:
+            flux = self.flux_array
+        if flux_err is None:
+            flux_err = self.flux_err
+
         model_calc = self.calc(time, with_GP=False)
-        return self.GP_model.calc(time, model_calc, deconstruct_gp=decompose)
+
+        # GP_model.calc has format model_calc THEN time. not the other way around!
+        return self.GP_model.calc(model_calc, time, flux, flux_err, deconstruct_gp=decompose)
     
     def update_model(self,theta):
 
@@ -180,12 +212,10 @@ class LightcurveModel(object):
             self.param_dict[self.param_list_free[i]].currVal = theta[i]
 
         self.transit_model.update_model(self.param_dict)
+        self.systematic_model.update_model(self.param_dict)
 
-        if self.sys_model_used:
-            self.systematic_model.update_model(self.param_dict)
         if self.GP_used:
             self.GP_model.update_model(self.param_dict)
-
         return
 
 
