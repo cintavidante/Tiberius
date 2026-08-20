@@ -57,6 +57,10 @@ for ilc in range(nlc):
         else:
             print("No rescaled uncertainties found, using original uncertainties instead.")
 
+    print(np.shape(x))
+    print(np.shape(y))
+    print(np.shape(e))
+
     # raise SystemExit
 
     ### Print median RMS of all bins from LM_statistics.dat/prod_statistics.dat
@@ -171,9 +175,10 @@ for ilc in range(nlc):
 
     for i,model in enumerate(m):
         # calculate transit model
-        model_y = model.calc(x[i])
+        model_y = model.calc(time=x[i], with_GP=False)
         if model.GP_used:
-            mu = model.GP_model.calc(x[i],y[i],e[i])
+            mu, std = model.GP_model.calc(model_calc=model_y,time=x[i],flux=y[i],
+                                          flux_err=e[i])
             residuals.append(y[i] - model_y - mu)
         else:
             residuals.append(y[i]-model_y)
