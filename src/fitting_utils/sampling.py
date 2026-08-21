@@ -1067,6 +1067,8 @@ class Sampling(object):
 
                 bestfit[name] = (median, plus, minus, avg_unc)
 
+        print(bestfit)
+
         # -------------------------------------------
         # Output file
         # -------------------------------------------
@@ -1096,6 +1098,9 @@ class Sampling(object):
                 pname, fitflag, value, p1, p2, ptype = parts[:6]
                 remainder = parts[6:]  # preserve trailing comments or columns
 
+                if pname not in self.joint_fitter.joint_param_names:
+                    pname = f'{pname}_lc{ilc}'
+
                 # Not a parameter present in best-fit file
                 if pname not in bestfit:
                     outfile.write(line)
@@ -1104,7 +1109,7 @@ class Sampling(object):
                 median, plus, minus, avg_unc = bestfit[pname]
 
                 # Determine if this param should become fixed
-                is_forced_fixed = pname in force_fix
+                is_forced_fixed = pname.split('_',1)[0] in force_fix
 
                 # -------------------------------------------
                 # If forced fixed
@@ -1154,6 +1159,10 @@ class Sampling(object):
                 # -------------------------------------------
                 # Construct output line
                 # -------------------------------------------
+                suffix = f"_lc{ilc}"
+                if pname.endswith(suffix):
+                    pname = pname[:-len(suffix)]
+
                 newcols = [pname, new_fitflag, new_value, new_p1, new_p2, ptype]
                 if remainder:
                     newcols += remainder
